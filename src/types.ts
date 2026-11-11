@@ -105,12 +105,17 @@ export interface ExerciseProgressionPoint {
   technique?: string;
 }
 
+export type WorkoutRestTimer = { endsAt: number } | { pausedSeconds: number };
+
 export interface ActiveWorkoutDraft {
   routineId: string;
   weekId?: string;
+  selectedExerciseId?: string;
   sessionStartTime: string;
   elapsedSeconds?: number;
   isTimerRunning?: boolean;
+  timerStartedAt?: number;
+  restTimer?: WorkoutRestTimer;
   exerciseLogs: Record<string, SetLog[]>;
   exerciseNotes: Record<string, string>;
   updatedAt: string;

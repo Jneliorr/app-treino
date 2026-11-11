@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import {
   Check,
   Dumbbell,
@@ -35,13 +35,14 @@ import {
   EyeOff,
   Youtube,
 } from 'lucide-react';
-import { Routine, RoutineExercise, SetLog, ExerciseLogEntry, WorkoutLog } from '../types';
+import { Routine, RoutineExercise, SetLog, ExerciseLogEntry, WorkoutLog, WorkoutRestTimer } from '../types';
 import {
   getLastSessionForExercise,
   addWorkoutLog,
   loadRoutineDraft,
   saveRoutineDraft,
   clearRoutineDraft,
+  newRecordId,
 } from '../services/storage';
 import {
   playRestTimerCompleteSound,
@@ -63,6 +64,8 @@ import { ExerciseVideoModal } from './ExerciseVideoModal';
 interface Props {
   routines: Routine[];
   selectedRoutineId: string;
+  profileId: string;
+  weekId: string;
   weekName?: string;
   onSelectRoutine: (routineId: string) => void;
   onOpenTechniqueModal: (techniqueId: string) => void;
@@ -161,9 +164,32 @@ const WeightField: React.FC<WeightFieldProps> = ({ id, value, onChange, disabled
   );
 };
 
+function getRestSeconds(timer: WorkoutRestTimer | undefined, now: number): number {
+  if (!timer) return 0;
+  if ('pausedSeconds' in timer) return timer.pausedSeconds;
+  return Math.max(0, Math.ceil((timer.endsAt - now) / 1000));
+}
+
+function generateInitialLogsForRoutine(routine: Routine, profileId: string): Record<string, SetLog[]> {
+  return Object.fromEntries(routine.exercises.map((exercise) => {
+    const past = getLastSessionForExercise(exercise.name, profileId)?.weights ?? [];
+    const targetReps = parseInt(exercise.reps.match(/\d+/)?.[0] ?? '8', 10);
+    const sets = Array.from({ length: exercise.sets }, (_, index) => ({
+      setNumber: index + 1,
+      weightKg: past[index] ?? past[0] ?? 0,
+      repsCompleted: targetReps,
+      completed: false,
+      techniqueApplied: false,
+    }));
+    return [exercise.id, sets];
+  }));
+}
+
 export const WorkoutActiveView: React.FC<Props> = ({
   routines,
   selectedRoutineId,
+  profileId,
+  weekId,
   weekName,
   onSelectRoutine,
   onOpenTechniqueModal,
@@ -177,13 +203,36 @@ export const WorkoutActiveView: React.FC<Props> = ({
 
   const [showRoutineSwitcher, setShowRoutineSwitcher] = useState(false);
 
-  // Session state
-  const [sessionStartTime, setSessionStartTime] = useState<Date>(() => new Date());
-  const [isSessionActive, setIsSessionActive] = useState(true);
+  // O componente é remontado quando muda o perfil, a semana ou o treino.
+  const [draft] = useState(() => loadRoutineDraft(currentRoutine.id, weekId, profileId));
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | undefined>(draft?.selectedExerciseId);
+  const [sessionStartTime, setSessionStartTime] = useState(() => new Date(draft?.sessionStartTime ?? Date.now()));
+  const [timerBase, setTimerBase] = useState(draft?.elapsedSeconds ?? 0);
+  const [timerStartedAt, setTimerStartedAt] = useState(() => {
+    if (!draft?.isTimerRunning) return null;
+    const lastSavedAt = Date.parse(draft.updatedAt);
+    return draft.timerStartedAt ?? (Number.isFinite(lastSavedAt) ? lastSavedAt : Date.now());
+  });
+  const [clockNow, setClockNow] = useState(Date.now);
+  const isTimerRunning = timerStartedAt !== null;
+  const elapsedAt = (now: number) => timerBase + (
+    timerStartedAt === null ? 0 : Math.max(0, Math.floor((now - timerStartedAt) / 1000))
+  );
+  const timerSeconds = elapsedAt(clockNow);
 
-  // Workout stopwatch / timer state
-  const [timerSeconds, setTimerSeconds] = useState<number>(0);
-  const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
+  const startTimer = () => {
+    const now = Date.now();
+    setClockNow(now);
+    setTimerStartedAt(now);
+  };
+  const pauseTimer = () => {
+    setTimerBase(elapsedAt(Date.now()));
+    setTimerStartedAt(null);
+  };
+  const resetTimer = () => {
+    setTimerBase(0);
+    setTimerStartedAt(null);
+  };
 
   // Header stats & details collapsed state (Padrão: sempre recolhido)
   const [isHeaderDetailsCollapsed, setIsHeaderDetailsCollapsed] = useState<boolean>(() => {
@@ -206,13 +255,27 @@ export const WorkoutActiveView: React.FC<Props> = ({
   };
 
   // Rest timer state (between sets)
-  const [restTimerSeconds, setRestTimerSeconds] = useState<number>(0);
-  const [restTimerInitial, setRestTimerInitial] = useState<number>(0);
-  const [isRestTimerActive, setIsRestTimerActive] = useState<boolean>(false);
+  const [restTimer, setRestTimer] = useState<WorkoutRestTimer | undefined>(draft?.restTimer);
+  const restEndsAt = restTimer && 'endsAt' in restTimer ? restTimer.endsAt : undefined;
+  const restTimerSeconds = getRestSeconds(restTimer, clockNow);
+  const isRestTimerActive = restEndsAt !== undefined && restTimerSeconds > 0;
+  const lastRestSignal = useRef<string | null>(
+    restEndsAt !== undefined && restTimerSeconds === 0 ? `${restEndsAt}:0` : null
+  );
 
   // Exercise entries state
-  const [exerciseLogs, setExerciseLogs] = useState<Record<string, SetLog[]>>({});
-  const [exerciseNotes, setExerciseNotes] = useState<Record<string, string>>({});
+  const [exerciseLogs, setExerciseLogs] = useState(() => {
+    const initial = generateInitialLogsForRoutine(currentRoutine, profileId);
+    for (const id of Object.keys(initial)) {
+      const saved = draft?.exerciseLogs[id];
+      if (Array.isArray(saved) && saved.length) initial[id] = saved;
+    }
+    return initial;
+  });
+  const [exerciseNotes, setExerciseNotes] = useState(() => draft?.exerciseNotes ?? {});
+  const initialLogs = useRef(exerciseLogs);
+  const keepDraft = useRef(Boolean(draft));
+  const draftSuspended = useRef(false);
   // Expanded state per exercise - ALL start minimized by default as requested
   const [expandedExerciseIds, setExpandedExerciseIds] = useState<Record<string, boolean>>({});
   // Collapsed state for the "FINALIZADOS" section - starts collapsed by default
@@ -231,7 +294,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
   const [finishCalories, setFinishCalories] = useState<string>('');
   const [finishNotes, setFinishNotes] = useState<string>('');
-  const [isMarkedCompleted, setIsMarkedCompleted] = useState<boolean>(true);
+  const [finishError, setFinishError] = useState('');
 
   // Summary dialog state
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
@@ -306,47 +369,35 @@ export const WorkoutActiveView: React.FC<Props> = ({
     });
   };
 
-  // Refs for tracking routine loading and preventing race conditions
-  const currentLoadedRoutineIdRef = useRef<string | null>(null);
-  const isReadyToSaveRef = useRef<boolean>(false);
-
-  // Stopwatch interval timer
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (isTimerRunning && isSessionActive) {
-      interval = setInterval(() => {
-        setTimerSeconds((prev) => prev + 1);
-      }, 1000);
-    }
+    if (!isTimerRunning && !isRestTimerActive) return;
+    const tick = () => setClockNow(Date.now());
+    tick();
+    const interval = window.setInterval(tick, 1000);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('pageshow', tick);
+    window.addEventListener('focus', tick);
     return () => {
-      if (interval) clearInterval(interval);
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('pageshow', tick);
+      window.removeEventListener('focus', tick);
     };
-  }, [isTimerRunning, isSessionActive]);
+  }, [isTimerRunning, isRestTimerActive, restEndsAt]);
 
-  // Rest timer interval countdown between sets with subtle warning ticks
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (isRestTimerActive && restTimerSeconds > 0) {
-      interval = setInterval(() => {
-        setRestTimerSeconds((prev) => {
-          if (prev <= 4 && prev > 1) {
-            playCountdownTickSound();
-            triggerLightHaptic();
-          }
-          if (prev <= 1) {
-            playRestTimerCompleteSound();
-            triggerHapticFeedback();
-            setIsRestTimerActive(false);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+    if (restEndsAt === undefined || restTimerSeconds > 3) return;
+    const signal = `${restEndsAt}:${restTimerSeconds}`;
+    if (signal === lastRestSignal.current) return;
+    lastRestSignal.current = signal;
+    if (restTimerSeconds === 0) {
+      playRestTimerCompleteSound();
+      triggerHapticFeedback();
+    } else {
+      playCountdownTickSound();
+      triggerLightHaptic();
     }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isRestTimerActive, restTimerSeconds]);
+  }, [restEndsAt, restTimerSeconds]);
 
   // Formatted timer display (HH:MM:SS or MM:SS)
   const formattedTimer = useMemo(() => {
@@ -363,180 +414,28 @@ export const WorkoutActiveView: React.FC<Props> = ({
       .padStart(2, '0')}`;
   }, [timerSeconds]);
 
-  // Helper: generate initial logs for a routine from previous sessions
-  const generateInitialLogsForRoutine = (routine: Routine): Record<string, SetLog[]> => {
-    const initialLogs: Record<string, SetLog[]> = {};
-
-    routine.exercises.forEach((ex) => {
-      const lastSession = getLastSessionForExercise(ex.name);
-      const defaultWeight = lastSession && lastSession.weights.length > 0 ? lastSession.weights[0] : 0;
-      const targetRepsNum = parseInt(ex.reps.split(/[^0-9]/)[0], 10) || 8;
-
-      const sets: SetLog[] = [];
-      for (let i = 1; i <= ex.sets; i++) {
-        const pastWeightForSet =
-          lastSession && lastSession.weights[i - 1] !== undefined
-            ? lastSession.weights[i - 1]
-            : defaultWeight;
-        sets.push({
-          setNumber: i,
-          weightKg: pastWeightForSet,
-          repsCompleted: targetRepsNum,
-          completed: false,
-          techniqueApplied: false,
-        });
-      }
-      initialLogs[ex.id] = sets;
-    });
-
-    return initialLogs;
-  };
-
-  // Initialize or restore sets for current routine when routine changes
-  useEffect(() => {
-    if (!currentRoutine) return;
-    isReadyToSaveRef.current = false;
-
-    // Check if there is an existing draft saved in localStorage for this routine
-    const savedDraft = loadRoutineDraft(currentRoutine.id);
-
-    // CRITICAL FIX: Check if the saved draft is already 100% completed from a previous session!
-    const isSavedDraftFullyCompleted =
-      savedDraft &&
-      savedDraft.exerciseLogs &&
-      Object.keys(savedDraft.exerciseLogs).length > 0 &&
-      Object.values(savedDraft.exerciseLogs).every(
-        (sets) => Array.isArray(sets) && sets.length > 0 && sets.every((s) => s.completed)
-      );
-
-    if (isSavedDraftFullyCompleted) {
-      // The previous workout was completely done! Start a fresh session for the new week/session!
-      clearRoutineDraft(currentRoutine.id);
-      const freshLogs = generateInitialLogsForRoutine(currentRoutine);
-      setExerciseLogs(freshLogs);
-      setExerciseNotes({});
-      setSessionStartTime(new Date());
-      setTimerSeconds(0);
-      setIsTimerRunning(false);
-    } else if (savedDraft && savedDraft.exerciseLogs && Object.keys(savedDraft.exerciseLogs).length > 0) {
-      // Reconcile with routine exercises (in case exercises were added or modified)
-      const reconciledLogs: Record<string, SetLog[]> = { ...savedDraft.exerciseLogs };
-
-      currentRoutine.exercises.forEach((ex) => {
-        if (!reconciledLogs[ex.id] || reconciledLogs[ex.id].length === 0) {
-          const lastSession = getLastSessionForExercise(ex.name);
-          const defaultWeight = lastSession && lastSession.weights.length > 0 ? lastSession.weights[0] : 0;
-          const targetRepsNum = parseInt(ex.reps.split(/[^0-9]/)[0], 10) || 8;
-          const sets: SetLog[] = [];
-          for (let i = 1; i <= ex.sets; i++) {
-            const pastWeightForSet =
-              lastSession && lastSession.weights[i - 1] !== undefined
-                ? lastSession.weights[i - 1]
-                : defaultWeight;
-            sets.push({
-              setNumber: i,
-              weightKg: pastWeightForSet,
-              repsCompleted: targetRepsNum,
-              completed: false,
-              techniqueApplied: false,
-            });
-          }
-          reconciledLogs[ex.id] = sets;
-        }
-      });
-
-      setExerciseLogs(reconciledLogs);
-      setExerciseNotes(savedDraft.exerciseNotes || {});
-      if (savedDraft.sessionStartTime) {
-        setSessionStartTime(new Date(savedDraft.sessionStartTime));
-      }
-
-      // Restore timer: accurately restore exact elapsedSeconds without phantom calculation
-      setTimerSeconds(savedDraft.elapsedSeconds || 0);
-      setIsTimerRunning(savedDraft.isTimerRunning || false);
-    } else {
-      // No draft found, generate default initial logs
-      const freshLogs = generateInitialLogsForRoutine(currentRoutine);
-      setExerciseLogs(freshLogs);
-      setExerciseNotes({});
-      setSessionStartTime(new Date());
-      setTimerSeconds(0);
-      setIsTimerRunning(false);
-    }
-
-    currentLoadedRoutineIdRef.current = currentRoutine.id;
-    // Always start with all exercises minimized and finalizados collapsed
-    setExpandedExerciseIds({});
-    setIsCompletedGroupOpen(false);
-
-    // Enable saving after this cycle
-    const timer = setTimeout(() => {
-      isReadyToSaveRef.current = true;
-    }, 60);
-
-    return () => clearTimeout(timer);
-  }, [currentRoutine.id]);
-
-  // Auto-save whenever exerciseLogs, exerciseNotes, timerSeconds or timer status change
-  useEffect(() => {
-    if (!isReadyToSaveRef.current) return;
-    if (!currentRoutine || currentLoadedRoutineIdRef.current !== currentRoutine.id) return;
-    if (Object.keys(exerciseLogs).length === 0) return;
-
-    // Only save draft if user actually started training (completed a set, entered notes, or timer started)
-    const hasAnyCompleted = Object.values(exerciseLogs).some(
-      (sets) => Array.isArray(sets) && sets.some((s) => s.completed)
-    );
-    const hasActiveTimer = timerSeconds > 0 || isTimerRunning;
-    const hasNotes = Object.values(exerciseNotes).some(
-      (n) => typeof n === 'string' && n.trim().length > 0
-    );
-
-    if (!hasAnyCompleted && !hasActiveTimer && !hasNotes) {
-      // Do not pollute storage with an empty/unstarted draft
-      return;
-    }
+  // Grave os horários na mesma atualização que inicia, pausa ou encerra a contagem.
+  useLayoutEffect(() => {
+    if (draftSuspended.current) return;
+    const hasChanges = selectedExerciseId || exerciseLogs !== initialLogs.current || timerBase > 0 || isTimerRunning || restTimer ||
+      Object.values(exerciseNotes).some((note) => typeof note === 'string' && note.trim().length > 0);
+    if (!hasChanges && !keepDraft.current) return;
+    keepDraft.current = true;
 
     saveRoutineDraft({
       routineId: currentRoutine.id,
+      weekId,
+      selectedExerciseId,
       sessionStartTime: sessionStartTime.toISOString(),
-      elapsedSeconds: timerSeconds,
+      elapsedSeconds: timerBase,
       isTimerRunning,
+      timerStartedAt: timerStartedAt ?? undefined,
+      restTimer,
       exerciseLogs,
       exerciseNotes,
       updatedAt: new Date().toISOString(),
-    });
-  }, [exerciseLogs, exerciseNotes, currentRoutine?.id, sessionStartTime, timerSeconds, isTimerRunning]);
-
-  // Flush to localStorage if window unloads or mobile browser backgrounds
-  useEffect(() => {
-    const handlePageExit = () => {
-      if (
-        isReadyToSaveRef.current &&
-        currentRoutine &&
-        currentLoadedRoutineIdRef.current === currentRoutine.id &&
-        Object.keys(exerciseLogs).length > 0
-      ) {
-        saveRoutineDraft({
-          routineId: currentRoutine.id,
-          sessionStartTime: sessionStartTime.toISOString(),
-          elapsedSeconds: timerSeconds,
-          isTimerRunning,
-          exerciseLogs,
-          exerciseNotes,
-          updatedAt: new Date().toISOString(),
-        });
-      }
-    };
-
-    window.addEventListener('beforeunload', handlePageExit);
-    window.addEventListener('pagehide', handlePageExit);
-
-    return () => {
-      window.removeEventListener('beforeunload', handlePageExit);
-      window.removeEventListener('pagehide', handlePageExit);
-    };
-  }, [exerciseLogs, exerciseNotes, currentRoutine, sessionStartTime, timerSeconds, isTimerRunning]);
+    }, profileId);
+  }, [exerciseLogs, exerciseNotes, selectedExerciseId, currentRoutine.id, weekId, profileId, sessionStartTime, timerBase, isTimerRunning, timerStartedAt, restTimer]);
 
   // Calculations
   const stats = useMemo(() => {
@@ -562,7 +461,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
   const updateSet = (exerciseId: string, setIndex: number, field: keyof SetLog, value: any) => {
     setExerciseLogs((prev) => {
       const currentSets = prev[exerciseId] ? [...prev[exerciseId]] : [];
-      if (!currentSets[setIndex]) return prev;
+      if (!currentSets[setIndex] || currentSets[setIndex][field] === value) return prev;
 
       const previousWeight = currentSets[setIndex].weightKg || 0;
       currentSets[setIndex] = {
@@ -687,71 +586,54 @@ export const WorkoutActiveView: React.FC<Props> = ({
 
   // Rest timer controls
   const adjustRestTimer = (delta: number) => {
-    setRestTimerSeconds((prev) => Math.max(5, prev + delta));
+    const now = Date.now();
+    const remaining = getRestSeconds(restTimer, now);
+    if (remaining === 0) return;
+    const adjusted = Math.max(5, remaining + delta);
+    setClockNow(now);
+    setRestTimer(restEndsAt === undefined ? { pausedSeconds: adjusted } : { endsAt: now + adjusted * 1000 });
   };
 
   const toggleRestTimer = () => {
-    if (restTimerSeconds <= 0 && restTimerInitial > 0) {
-      setRestTimerSeconds(restTimerInitial);
-      setIsRestTimerActive(true);
-    } else {
-      setIsRestTimerActive((prev) => !prev);
-    }
+    const now = Date.now();
+    const remaining = getRestSeconds(restTimer, now);
+    setClockNow(now);
+    if (remaining === 0) return;
+    setRestTimer(restEndsAt === undefined ? { endsAt: now + remaining * 1000 } : { pausedSeconds: remaining });
   };
 
   const dismissRestTimer = () => {
-    setIsRestTimerActive(false);
-    setRestTimerSeconds(0);
+    setRestTimer(undefined);
   };
 
   // Handler: toggle set completed
   const toggleSetCompleted = (exercise: RoutineExercise, setIndex: number) => {
-    setExerciseLogs((prev) => {
-      const currentSets = prev[exercise.id] ? [...prev[exercise.id]] : [];
-      if (!currentSets[setIndex]) return prev;
+    const currentSets = [...(exerciseLogs[exercise.id] ?? [])];
+    const set = currentSets[setIndex];
+    if (!set) return;
+    setSelectedExerciseId(exercise.id);
+    const completed = !set.completed;
+    const targetReps = parseInt(String(exercise.reps).match(/\d+/)?.[0] || '10', 10);
+    currentSets[setIndex] = { ...set, repsCompleted: set.repsCompleted || targetReps, completed };
 
-      const wasCompleted = currentSets[setIndex].completed;
-      const nextCompleted = !wasCompleted;
-
-      // Extract routine target reps (e.g. from '8-10' or '12' -> 10 or 12)
-      const targetReps = parseInt(String(exercise.reps).match(/\d+/)?.[0] || '10', 10);
-      const repsCompleted = currentSets[setIndex].repsCompleted || targetReps;
-
-      currentSets[setIndex] = {
-        ...currentSets[setIndex],
-        repsCompleted,
-        completed: nextCompleted,
-      };
-
-      // When marking completed, auto-trigger rest timer, pleasant completion chime and haptic feedback
-      if (nextCompleted) {
-        playSetCompletedSound();
-        triggerHapticFeedback();
-
-        // PREENCHIMENTO AUTOMÁTICO INTELIGENTE AO CONCLUIR:
-        // Se a próxima série estiver com 0 kg, replica a carga desta série
-        if (isSmartAutoFillEnabled && currentSets[setIndex].weightKg > 0) {
-          for (let i = setIndex + 1; i < currentSets.length; i++) {
-            if (!currentSets[i].completed && currentSets[i].weightKg === 0) {
-              currentSets[i] = {
-                ...currentSets[i],
-                weightKg: currentSets[setIndex].weightKg,
-              };
-            }
+    if (completed) {
+      playSetCompletedSound();
+      triggerHapticFeedback();
+      if (isSmartAutoFillEnabled && set.weightKg > 0) {
+        for (let i = setIndex + 1; i < currentSets.length; i++) {
+          if (!currentSets[i].completed && currentSets[i].weightKg === 0) {
+            currentSets[i] = { ...currentSets[i], weightKg: set.weightKg };
           }
         }
-
-        const restSec = exercise.defaultRestSeconds || currentRoutine.restIntervalSeconds || 90;
-        setRestTimerSeconds(restSec);
-        setRestTimerInitial(restSec);
-        setIsRestTimerActive(true);
       }
 
-      return {
-        ...prev,
-        [exercise.id]: currentSets,
-      };
-    });
+      const restSeconds = exercise.defaultRestSeconds || currentRoutine.restIntervalSeconds || 90;
+      const now = Date.now();
+      setClockNow(now);
+      setRestTimer({ endsAt: now + restSeconds * 1000 });
+    }
+
+    setExerciseLogs((prev) => ({ ...prev, [exercise.id]: currentSets }));
   };
 
   // Handler: repeat weight from previous set to all remaining sets
@@ -760,6 +642,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
       const currentSets = prev[exerciseId] ? [...prev[exerciseId]] : [];
       const sourceWeight = currentSets[sourceIndex]?.weightKg || 0;
       for (let i = sourceIndex + 1; i < currentSets.length; i++) {
+        if (currentSets[i].completed) continue;
         currentSets[i] = {
           ...currentSets[i],
           weightKg: sourceWeight,
@@ -843,54 +726,6 @@ export const WorkoutActiveView: React.FC<Props> = ({
     setClearingExerciseId(null);
   };
 
-  // Handler: Conclude current exercise, collapse it and automatically expand the next exercise
-  const handleConcludeExerciseAndAdvance = (exerciseId: string, exIdx: number) => {
-    // 1. Mark all sets of this exercise as completed
-    setExerciseLogs((prev) => {
-      const currentSets = prev[exerciseId] ? [...prev[exerciseId]] : [];
-      const updatedSets = currentSets.map((s) => ({
-        ...s,
-        completed: true,
-      }));
-      return {
-        ...prev,
-        [exerciseId]: updatedSets,
-      };
-    });
-
-    // 2. Identify the next exercise
-    const nextExercise = currentRoutine.exercises[exIdx + 1];
-
-    // 3. Current exercise moves to FINALIZADOS and collapses. Next exercise expands!
-    setExpandedExerciseIds((prev) => {
-      const updated = {
-        ...prev,
-        [exerciseId]: false,
-      };
-      if (nextExercise) {
-        updated[nextExercise.id] = true;
-      }
-      return updated;
-    });
-
-    // 4. Smooth scroll to the next exercise or finish button
-    if (nextExercise) {
-      setTimeout(() => {
-        const nextElem = document.getElementById(`exercise-card-${nextExercise.id}`);
-        if (nextElem) {
-          nextElem.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      }, 120);
-    } else {
-      setTimeout(() => {
-        const finishBtn = document.getElementById('finish-workout-btn');
-        if (finishBtn) {
-          finishBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, 120);
-    }
-  };
-
   // Calculation of uncompleted sets
   const uncompletedSetsCount = useMemo(() => {
     return Math.max(0, stats.totalSets - stats.completedSets);
@@ -898,6 +733,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
 
   // Request to finish workout (triggers confirmation if sets are pending)
   const handleRequestFinishWorkout = () => {
+    setFinishError('');
     if (uncompletedSetsCount > 0) {
       setIsPendingSetsWarningOpen(true);
     } else {
@@ -907,11 +743,13 @@ export const WorkoutActiveView: React.FC<Props> = ({
 
   // Open finish workout modal directly
   const handleOpenFinishModal = () => {
+    setFinishError('');
     setIsFinishModalOpen(true);
   };
 
   // Confirm Finish Workout with calories & notes
   const handleConfirmFinishWorkout = () => {
+    if (draftSuspended.current) return;
     const entries: ExerciseLogEntry[] = currentRoutine.exercises.map((ex) => {
       const sets = exerciseLogs[ex.id] || [];
       return {
@@ -928,14 +766,18 @@ export const WorkoutActiveView: React.FC<Props> = ({
 
     const durationMins = Math.max(
       1,
-      Math.round(timerSeconds > 0 ? timerSeconds / 60 : (Date.now() - sessionStartTime.getTime()) / 60000)
+      Math.round(isTimerRunning || timerBase > 0
+        ? elapsedAt(Date.now()) / 60
+        : (Date.now() - sessionStartTime.getTime()) / 60000)
     );
 
     const caloriesNumber = finishCalories.trim() !== '' ? parseInt(finishCalories, 10) : undefined;
 
     const newLog: WorkoutLog = {
-      id: `log_${Date.now()}`,
-      userId: 'usuario_atual',
+      id: newRecordId('log_'),
+      userId: profileId,
+      weekId,
+      weekName,
       routineId: currentRoutine.id,
       routineCode: currentRoutine.code,
       routineName: `${currentRoutine.name}: ${currentRoutine.targetMuscles}`,
@@ -949,95 +791,60 @@ export const WorkoutActiveView: React.FC<Props> = ({
       notes: finishNotes.trim() || undefined,
     };
 
-    addWorkoutLog(newLog);
-
-    // CRITICAL: Block auto-save immediately to prevent re-saving the completed draft!
-    isReadyToSaveRef.current = false;
-    clearRoutineDraft(currentRoutine.id);
-
-    // Reset current routine sets to uncompleted for the next week/session
-    const freshLogs = generateInitialLogsForRoutine(currentRoutine);
-    setExerciseLogs(freshLogs);
-    setExerciseNotes({});
-    setExpandedExerciseIds({});
-    setIsCompletedGroupOpen(false);
-    setTimerSeconds(0);
-    setIsTimerRunning(false);
-    clearRoutineDraft(currentRoutine.id);
+    try {
+      addWorkoutLog(newLog, profileId);
+    } catch {
+      setFinishError('Não foi possível salvar o treino neste navegador. Libere espaço ou verifique o armazenamento e tente novamente.');
+      return;
+    }
+    draftSuspended.current = true;
+    clearRoutineDraft(currentRoutine.id, weekId, profileId);
+    pauseTimer();
+    dismissRestTimer();
 
     playWorkoutFinishedSound();
     triggerHapticFeedback();
     setLastSavedLog(newLog);
-    setIsSessionActive(false);
     setIsFinishModalOpen(false);
     setIsSummaryOpen(true);
   };
 
-  // Reset current routine session back to clean defaults
-  const handleConfirmReset = () => {
-    if (!currentRoutine) return;
-    isReadyToSaveRef.current = false;
-    clearRoutineDraft(currentRoutine.id);
-    const freshLogs = generateInitialLogsForRoutine(currentRoutine);
+  const resetSession = () => {
+    const freshLogs = generateInitialLogsForRoutine(currentRoutine, profileId);
+    initialLogs.current = freshLogs;
+    keepDraft.current = false;
+    draftSuspended.current = false;
     setExerciseLogs(freshLogs);
     setExerciseNotes({});
+    setSelectedExerciseId(undefined);
     setExpandedExerciseIds({});
     setIsCompletedGroupOpen(false);
     setSessionStartTime(new Date());
-    setTimerSeconds(0);
-    setIsTimerRunning(false);
+    resetTimer();
+    dismissRestTimer();
     setFinishCalories('');
     setFinishNotes('');
+    setFinishError('');
+  };
+
+  const handleConfirmReset = () => {
+    clearRoutineDraft(currentRoutine.id, weekId, profileId);
+    resetSession();
     setIsResetConfirmOpen(false);
   };
 
   // Close summary modal and advance
   const handleCloseSummary = () => {
     setIsSummaryOpen(false);
-    setFinishCalories('');
-    setFinishNotes('');
-    setExpandedExerciseIds({});
-    setIsCompletedGroupOpen(false);
-    setTimerSeconds(0);
-    setIsTimerRunning(false);
-    isReadyToSaveRef.current = false;
-    clearRoutineDraft(currentRoutine.id);
 
     const currentIndex = routines.findIndex((r) => r.id === currentRoutine.id);
     const nextRoutine = routines[(currentIndex + 1) % routines.length];
     if (nextRoutine && nextRoutine.id !== currentRoutine.id) {
       onSelectRoutine(nextRoutine.id);
     } else {
-      const freshLogs = generateInitialLogsForRoutine(currentRoutine);
-      setExerciseLogs(freshLogs);
-      setExerciseNotes({});
-      setSessionStartTime(new Date());
+      resetSession();
     }
-    setIsSessionActive(true);
   };
-
-  // Identify the currently active exercise (first exercise that has uncompleted sets)
-  const activeExerciseId = useMemo(() => {
-    for (const ex of currentRoutine.exercises) {
-      const sets = exerciseLogs[ex.id] || [];
-      const allDone = sets.length > 0 && sets.every((s) => s.completed);
-      if (!allDone) {
-        return ex.id;
-      }
-    }
-    return null;
-  }, [currentRoutine.exercises, exerciseLogs]);
-
-  const activeExerciseIndex = useMemo(() => {
-    if (!activeExerciseId) return -1;
-    return currentRoutine.exercises.findIndex((ex) => ex.id === activeExerciseId);
-  }, [currentRoutine.exercises, activeExerciseId]);
-
-  const activeExercise = activeExerciseIndex >= 0 ? currentRoutine.exercises[activeExerciseIndex] : null;
-  const nextExercise =
-    activeExerciseIndex >= 0 && activeExerciseIndex + 1 < currentRoutine.exercises.length
-      ? currentRoutine.exercises[activeExerciseIndex + 1]
-      : null;
 
   // Split exercises into pending and completed for clean, organized layout
   const { pendingExercises, completedExercises } = useMemo(() => {
@@ -1057,10 +864,15 @@ export const WorkoutActiveView: React.FC<Props> = ({
     return { pendingExercises: pending, completedExercises: completed };
   }, [currentRoutine.exercises, exerciseLogs]);
 
-  const toggleExerciseExpand = (exerciseId: string) => {
+  const activeExercise = pendingExercises.find((exercise) => exercise.id === selectedExerciseId);
+  const activeExerciseIndex = activeExercise ? currentRoutine.exercises.indexOf(activeExercise) : -1;
+
+  const toggleExerciseExpand = (exerciseId: string, canSelect: boolean) => {
+    const shouldSelect = canSelect && exerciseId !== activeExercise?.id;
+    if (shouldSelect) setSelectedExerciseId(exerciseId);
     setExpandedExerciseIds((prev) => ({
       ...prev,
-      [exerciseId]: !prev[exerciseId],
+      [exerciseId]: shouldSelect || !prev[exerciseId],
     }));
   };
 
@@ -1082,11 +894,12 @@ export const WorkoutActiveView: React.FC<Props> = ({
 
   const renderExerciseCard = (exercise: RoutineExercise, isCompletedSection = false) => {
     const sets = exerciseLogs[exercise.id] || [];
-    const lastSession = getLastSessionForExercise(exercise.name);
+    const lastSession = getLastSessionForExercise(exercise.name, profileId);
     const allCompleted = sets.length > 0 && sets.every((s) => s.completed);
     const isExpanded = !!expandedExerciseIds[exercise.id];
     const completedSetsCount = sets.filter((s) => s.completed).length;
-    const isActive = exercise.id === activeExerciseId;
+    const isActive = exercise.id === activeExercise?.id;
+    const selectExpandedCard = !allCompleted && !isActive && isExpanded;
     const firstUncompletedSetIndex = sets.findIndex((s) => !s.completed);
     const matchedExerciseVideo = findExerciseVideo(exercise.name);
     const originalExIdx = currentRoutine.exercises.findIndex((e) => e.id === exercise.id);
@@ -1109,12 +922,12 @@ export const WorkoutActiveView: React.FC<Props> = ({
             ? 'exercise-card-active bg-[#0B3A61] border-2 border-[#FFAA00] shadow-xl shadow-[#FFAA00]/15 ring-2 ring-[#FFAA00]/30'
             : allCompleted
             ? 'bg-[#082F52]/80 border border-[#00C98B]/40 shadow-sm opacity-70 hover:opacity-100'
-            : 'exercise-card-dimmed bg-[#082F52] border border-[#14527A]/50 shadow-xs'
+            : `${activeExercise ? 'exercise-card-dimmed ' : ''}bg-[#082F52] border border-[#14527A]/50 shadow-xs`
         }`}
       >
         {/* Exercise Header (Clicking collapses / expands) */}
         <div
-          onClick={() => toggleExerciseExpand(exercise.id)}
+          onClick={() => toggleExerciseExpand(exercise.id, !allCompleted)}
           className={`p-3.5 sm:p-4 cursor-pointer select-none transition-colors ${
             isExpanded ? 'border-b border-[#14527A]' : ''
           } ${
@@ -1190,11 +1003,14 @@ export const WorkoutActiveView: React.FC<Props> = ({
             <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                onClick={() => toggleExerciseExpand(exercise.id)}
+                onClick={() => toggleExerciseExpand(exercise.id, !allCompleted)}
                 className="p-1.5 sm:p-2 rounded-lg bg-[#082F52] hover:bg-[#0B3A61] border border-[#14527A] text-[#8FAFBD] transition-colors"
-                title={isExpanded ? 'Recolher exercício' : 'Expandir exercício'}
+                aria-expanded={isExpanded}
+                title={selectExpandedCard ? 'Selecionar exercício' : isExpanded ? 'Recolher exercício' : 'Expandir exercício'}
               >
-                {isExpanded ? (
+                {selectExpandedCard ? (
+                  <Play className="w-4 h-4 text-[#00C98B]" />
+                ) : isExpanded ? (
                   <ChevronUp className="w-4 h-4 text-[#8FAFBD]" />
                 ) : (
                   <ChevronDown className="w-4 h-4 text-[#00C98B]" />
@@ -1232,7 +1048,12 @@ export const WorkoutActiveView: React.FC<Props> = ({
 
         {/* Sets List - Hidden when collapsed */}
         {isExpanded && (
-          <div className="p-2 sm:p-4 space-y-2 sm:space-y-3">
+          <div
+            className="p-2 sm:p-4 space-y-2 sm:space-y-3"
+            onFocus={() => {
+              if (!allCompleted && !isActive) setSelectedExerciseId(exercise.id);
+            }}
+          >
             {/* Quick Auto-Fill Prompt from previous workout if any set is empty */}
             {lastSession && sets.some((s) => !s.completed && s.weightKg === 0) && (
               <button
@@ -1492,7 +1313,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => toggleExerciseExpand(exercise.id)}
+                  onClick={() => toggleExerciseExpand(exercise.id, false)}
                   className="px-3 py-1.5 rounded-lg bg-[#0B3A61] hover:bg-[#10466D] border border-[#14527A] text-xs font-bold text-[#8FAFBD] hover:text-[#E8F4F8] transition-colors"
                 >
                   Recolher
@@ -1615,7 +1436,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
               {!isTimerRunning && timerSeconds === 0 ? (
                 <button
                   type="button"
-                  onClick={() => setIsTimerRunning(true)}
+                  onClick={startTimer}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#00C98B] hover:bg-[#00C98B]/90 text-[#031F38] text-[10px] font-black shadow-xs active:scale-95 transition-all cursor-pointer"
                   title="Iniciar contagem do tempo de treino"
                 >
@@ -1625,7 +1446,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
               ) : isTimerRunning ? (
                 <button
                   type="button"
-                  onClick={() => setIsTimerRunning(false)}
+                  onClick={pauseTimer}
                   className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#0B3A61] hover:bg-[#10466D] border border-[#14527A] text-[#FFB82E] text-[10px] font-bold active:scale-95 transition-all cursor-pointer"
                   title="Pausar cronômetro"
                 >
@@ -1635,7 +1456,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
               ) : (
                 <button
                   type="button"
-                  onClick={() => setIsTimerRunning(true)}
+                  onClick={startTimer}
                   className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#00C98B] hover:bg-[#00C98B]/90 text-[#031F38] text-[10px] font-black shadow-xs active:scale-95 transition-all cursor-pointer"
                   title="Retomar cronômetro"
                 >
@@ -1647,10 +1468,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
               {timerSeconds > 0 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setTimerSeconds(0);
-                    setIsTimerRunning(false);
-                  }}
+                  onClick={resetTimer}
                   className="w-6 h-6 rounded-md bg-[#082F52] hover:bg-[#0B3A61] text-[#8FAFBD] hover:text-[#E8F4F8] flex items-center justify-center transition-colors active:scale-95 cursor-pointer"
                   title="Zerar cronômetro (Reset)"
                 >
@@ -1755,28 +1573,22 @@ export const WorkoutActiveView: React.FC<Props> = ({
               />
             </div>
 
-            {/* Current & Next Exercise Indicator */}
+            {/* Exercício escolhido */}
             <div className="pt-2 border-t border-[#14527A]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
               <div className="flex items-center gap-1.5 text-[#E8F4F8] min-w-0">
                 <span className="text-[#FFAA00] font-black text-[11px] uppercase tracking-wider flex-shrink-0">
                   Exercício Atual:
                 </span>
                 <span className="truncate font-bold text-[#E8F4F8]">
-                  {activeExercise ? `${activeExerciseIndex + 1}. ${activeExercise.name}` : 'Todos Concluídos!'}
+                  {activeExercise
+                    ? `${activeExerciseIndex + 1}. ${activeExercise.name}`
+                    : pendingExercises.length > 0 ? 'Escolha um exercício' : 'Todos Concluídos!'}
                 </span>
                 <span className="text-[11px] text-[#8FAFBD] flex-shrink-0">
                   ({uncompletedSetsCount} {uncompletedSetsCount === 1 ? 'série restante' : 'séries restantes'})
                 </span>
               </div>
 
-              {nextExercise && (
-                <div className="text-[11px] text-[#8FAFBD] flex items-center gap-1 truncate min-w-0">
-                  <span className="text-[#64879A] flex-shrink-0">Próximo:</span>
-                  <span className="truncate text-[#8FAFBD] font-medium">
-                    {activeExerciseIndex + 2}. {nextExercise.name}
-                  </span>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -1900,7 +1712,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
 
 
       {/* Floating Square Rest Timer HUD (Modelo Quadrado Compacto sem espaço ocioso) */}
-      {(isRestTimerActive || restTimerSeconds > 0) && (
+      {restTimer && (
         <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 z-40 flex justify-center px-4 pointer-events-none animate-in slide-in-from-bottom-4 fade-in duration-200">
           <div className="pointer-events-auto w-[136px] sm:w-[144px] bg-[#121214]/95 border border-neutral-700/80 rounded-2xl p-2.5 shadow-2xl shadow-black/90 backdrop-blur-xl flex flex-col gap-1.5">
             {/* Top: Header com ícone, título e fechar */}
@@ -1941,20 +1753,20 @@ export const WorkoutActiveView: React.FC<Props> = ({
                 </span>
               </div>
 
-              <div className="text-[9px] font-medium mt-0.5 leading-none">
+              <div role="status" className="text-[9px] font-medium mt-0.5 leading-none">
                 {isRestTimerActive ? (
                   <span className="text-neutral-400 flex items-center gap-1">
                     <span className="w-1 h-1 rounded-full bg-[#FFAA00] animate-ping" />
                     Descansando
                   </span>
                 ) : (
-                  <span className="text-neutral-500">Pausado</span>
+                  <span className="text-neutral-300">{restTimerSeconds > 0 ? 'Pausado' : 'Concluído'}</span>
                 )}
               </div>
             </div>
 
             {/* Bottom: Aumentar, pausar e diminuir imediatamente abaixo do tempo */}
-            <div className="grid grid-cols-3 gap-1 w-full pt-1.5 border-t border-neutral-800/80">
+            {restTimerSeconds > 0 && <div className="grid grid-cols-3 gap-1 w-full pt-1.5 border-t border-neutral-800/80">
               <button
                 type="button"
                 onClick={() => adjustRestTimer(-30)}
@@ -1987,7 +1799,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
               >
                 +30s
               </button>
-            </div>
+            </div>}
           </div>
         </div>
       )}
@@ -2155,6 +1967,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
               />
             </div>
 
+            {finishError && <p role="alert" className="text-xs text-red-300">{finishError}</p>}
             {/* Action Buttons */}
             <div className="grid grid-cols-2 gap-2.5 pt-2">
               <button

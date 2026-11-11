@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 import {
   Dumbbell,
   TrendingUp,
@@ -38,13 +38,15 @@ import { WorkoutActiveView } from './components/WorkoutActiveView';
 import { WorkoutWeeksHubView } from './components/WorkoutWeeksHubView';
 import { ProgressionHistoryView } from './components/ProgressionHistoryView';
 import { TechniquesDictionaryModal } from './components/TechniquesDictionaryModal';
-import { SpreadsheetImportView } from './components/SpreadsheetImportView';
 import { FirestoreArchitectureView } from './components/FirestoreArchitectureView';
 import { UserProfileView } from './components/UserProfileView';
 import { ExerciseVideosView } from './components/ExerciseVideosView';
 import { AthleteProfileModal } from './components/AthleteProfileModal';
 
 type TabType = 'workout' | 'videos' | 'history' | 'sheets' | 'profile' | 'firestore_doc';
+
+const SpreadsheetImportView = lazy(() => import('./components/SpreadsheetImportView')
+  .then(({ SpreadsheetImportView }) => ({ default: SpreadsheetImportView })));
 
 export default function App() {
   const [activeProfileId, setActiveProfileIdState] = useState<string>(() => getActiveProfileId());
@@ -57,6 +59,7 @@ export default function App() {
 
   const [activeWeekId, setActiveWeekId] = useState<string>(() => loadActiveWeekId());
   const [routines, setRoutines] = useState<Routine[]>(() => loadRoutines());
+  const [scheduleRevision, setScheduleRevision] = useState(0);
   const [selectedRoutineId, setSelectedRoutineId] = useState<string>(() => {
     const loaded = loadRoutines();
     const saved = loadSavedActiveRoutineId();
@@ -268,15 +271,17 @@ export default function App() {
         <div className={activeTab === 'workout' ? 'block' : 'hidden'}>
           {!isWorkoutActiveScreen ? (
             <WorkoutWeeksHubView
-              key={`hub-${activeProfileId}`}
+              key={`hub-${activeProfileId}-${scheduleRevision}`}
               onStartWorkout={handleStartWorkout}
               onOpenSpreadsheetTab={() => setActiveTab('sheets')}
             />
           ) : (
             <WorkoutActiveView
-              key={`workout-${activeProfileId}-${selectedRoutineId}`}
+              key={JSON.stringify([activeProfileId, activeWeekId, selectedRoutineId])}
               routines={routines}
               selectedRoutineId={selectedRoutineId}
+              profileId={activeProfileId}
+              weekId={activeWeekId}
               weekName={activeWeekName}
               onSelectRoutine={handleSelectRoutine}
               onOpenTechniqueModal={openTechniqueModal}
@@ -295,48 +300,49 @@ export default function App() {
           />
         </div>
 
-        <div className={activeTab === 'history' ? 'block' : 'hidden'}>
+        {activeTab === 'history' && (
           <ProgressionHistoryView
             key={`history-${activeProfileId}`}
             initialExerciseName={targetExerciseForHistory}
             onOpenTechniqueModal={openTechniqueModal}
           />
-        </div>
+        )}
 
-        <div className={activeTab === 'sheets' ? 'block' : 'hidden'}>
-          <SpreadsheetImportView
-            key={`sheets-${activeProfileId}`}
-            onRoutinesUpdated={(newRoutines) => {
-              setRoutines(newRoutines);
-              if (newRoutines.length > 0) {
-                handleSelectRoutine(newRoutines[0].id);
-              }
-            }}
-            onWeekCreated={(weekId) => {
-              saveActiveWeekId(weekId);
-              setActiveWeekId(weekId);
-              setRoutines(loadRoutines());
-              setActiveTab('workout');
-              setIsWorkoutActiveScreen(false);
-            }}
-          />
-        </div>
+        {activeTab === 'sheets' && (
+          <Suspense fallback={<p role="status">Carregando fichas de treino…</p>}>
+            <SpreadsheetImportView
+              key={`sheets-${activeProfileId}`}
+              onRoutinesUpdated={(newRoutines) => {
+                setActiveWeekId(loadActiveWeekId());
+                setScheduleRevision((revision) => revision + 1);
+                setRoutines(newRoutines);
+                if (newRoutines.length > 0) {
+                  handleSelectRoutine(newRoutines[0].id);
+                }
+              }}
+              onWeekCreated={(weekId) => {
+                setActiveWeekId(weekId);
+                setActiveTab('workout');
+                setIsWorkoutActiveScreen(false);
+              }}
+            />
+          </Suspense>
+        )}
 
-        <div className={activeTab === 'profile' ? 'block' : 'hidden'}>
+        {activeTab === 'profile' && (
           <UserProfileView
             key={`profile-${activeProfileId}`}
             onOpenFirestoreDoc={() => setActiveTab('firestore_doc')}
             onOpenSpreadsheetTab={() => setActiveTab('sheets')}
             onOpenAthleteModal={() => setIsAthleteModalOpen(true)}
             onSelectRoutine={(id) => {
-              handleSelectRoutine(id);
-              setIsWorkoutActiveScreen(true);
+              handleStartWorkout(id, loadActiveWeekId());
               setActiveTab('workout');
             }}
             currentTheme={theme}
             onToggleTheme={toggleTheme}
           />
-        </div>
+        )}
 
         <div className={activeTab === 'firestore_doc' ? 'block' : 'hidden'}>
           <div className="mb-3">
@@ -526,6 +532,7 @@ export default function App() {
                 id="drawer-tab-history"
                 type="button"
                 onClick={() => {
+                  setTargetExerciseForHistory('');
                   setActiveTab('history');
                   setIsDrawerOpen(false);
                 }}

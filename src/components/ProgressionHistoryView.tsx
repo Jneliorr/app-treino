@@ -21,17 +21,23 @@ interface Props {
 }
 
 export const ProgressionHistoryView: React.FC<Props> = ({
+  initialExerciseName,
   onOpenTechniqueModal,
 }) => {
   const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>(() => loadWorkoutLogs());
-  const [searchFilter, setSearchFilter] = useState('');
+  const [searchFilter, setSearchFilter] = useState(initialExerciseName ?? '');
+  const [deleteError, setDeleteError] = useState('');
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
 
   const handleDeleteLog = (logId: string) => {
-    const updated = deleteWorkoutLog(logId);
-    setWorkoutLogs(updated);
-    setDeletingLogId(null);
+    try {
+      setWorkoutLogs(deleteWorkoutLog(logId));
+      setDeletingLogId(null);
+      setDeleteError('');
+    } catch {
+      setDeleteError('Não foi possível excluir o treino neste navegador. Tente novamente.');
+    }
   };
 
   // Resumo estatístico geral
@@ -66,7 +72,8 @@ export const ProgressionHistoryView: React.FC<Props> = ({
         routineName.includes(term) ||
         routineCode.includes(term) ||
         weekName.includes(term) ||
-        dateStr.includes(term)
+        dateStr.includes(term) ||
+        log.entries.some((entry) => entry.exerciseName.toLowerCase().includes(term))
       );
     });
   }, [workoutLogs, searchFilter]);
@@ -141,13 +148,13 @@ export const ProgressionHistoryView: React.FC<Props> = ({
         )}
 
         {/* Search / Filter input */}
-        {workoutLogs.length > 2 && (
+        {(workoutLogs.length > 0 || searchFilter) && (
           <div className="relative pt-1">
             <Search className="w-4 h-4 text-[#64879A] absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               id="history-search-input"
               type="text"
-              placeholder="Buscar por nome, letra do treino ou data..."
+              placeholder="Buscar por treino, exercício, semana ou data..."
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
               className="w-full pl-9 pr-4 py-2 text-xs sm:text-sm bg-[#031F38] border border-[#14527A] rounded-xl text-[#E8F4F8] placeholder-[#64879A] focus:outline-none focus:border-[#FFAA00]"
@@ -156,6 +163,7 @@ export const ProgressionHistoryView: React.FC<Props> = ({
         )}
       </div>
 
+      {deleteError && <p role="alert" className="text-xs text-red-300">{deleteError}</p>}
       {/* Finished Workouts List */}
       <div className="space-y-3">
         {filteredLogs.length > 0 ? (

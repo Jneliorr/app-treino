@@ -11,6 +11,26 @@ export interface ParseResult {
   notes: string[];
 }
 
+export function parseSetPrescription(text: string): Pick<RoutineExercise, 'sets' | 'reps'> | null {
+  const match = text.trim().match(/^(\d+)\s*[x×]\s*(?:(\d+)(?:\s*(?:[-–—]|a)\s*(\d+))?|(f|falha))$/i);
+  if (!match) return null;
+  const sets = Number(match[1]);
+  if (sets < 1 || sets > 100) return null;
+  if (match[4]) return { sets, reps: 'F' };
+  const first = Number(match[2]);
+  const last = Number(match[3] ?? match[2]);
+  if (!Number.isSafeInteger(last) || first < 1 || last < first) return null;
+  return { sets, reps: match[3] ? `${first}-${last}` : String(first) };
+}
+
+function parseRestSeconds(text: string): number | undefined {
+  const match = text.match(/(\d+)\s*(?:(?:a|[-–])\s*(\d+)\s*)?(min\w*|seg\w*|s\b)/i);
+  if (!match) return undefined;
+  const multiplier = match[3].toLowerCase().startsWith('min') ? 60 : 1;
+  const seconds = Math.round((Number(match[1]) + Number(match[2] ?? match[1])) * multiplier / 2);
+  return Number.isSafeInteger(seconds) && seconds > 0 ? seconds : undefined;
+}
+
 /**
  * Normaliza e identifica técnicas avançadas da Consultoria Leandro Twin
  */
@@ -61,8 +81,7 @@ function isIgnoredText(text: string): boolean {
   if (
     t.includes('qualquer dúvida') ||
     t.includes('clique aqui') ||
-    t.includes('exercício') ||
-    t.includes('exercicio') ||
+    /^exerc[ií]cios?(?:$|\s*\()/.test(t) ||
     t.includes('consultoria twin') ||
     t === 'sxr' ||
     t === 'peso' ||
@@ -157,7 +176,7 @@ export function parseWorkoutWorkbook(workbook: XLSX.WorkBook): ParseResult {
         const cell = String(row[c] || '').trim();
         if (!cell) continue;
 
-        const match = cell.match(/Treino\s*([A-Za-z0-9]+)\s*[:\-–]?\s*(.*)/i);
+        const match = cell.match(/^Treino\s+([A-Za-z]\d*|\d+)(?=\s|[:–-]|$)\s*[:–-]?\s*(.*)/i);
         if (match) {
           const code = match[1].toUpperCase();
           let muscles = match[2]?.trim() || '';
@@ -196,7 +215,7 @@ export function parseWorkoutWorkbook(workbook: XLSX.WorkBook): ParseResult {
 
       headers.forEach((header, hIdx) => {
         // Encontra limite de colunas para este treino
-        let colEnd = header.col + 4; // padrão 4 colunas (Exercício, SxR, Peso, Técnica)
+        let colEnd = header.col + 3; // padrão 4 colunas (Exercício, SxR, Peso, Técnica)
         const sameRowNextHeader = headers.find(
           (other, oIdx) => oIdx > hIdx && other.row === header.row && other.col > header.col
         );
@@ -225,29 +244,25 @@ export function parseWorkoutWorkbook(workbook: XLSX.WorkBook): ParseResult {
           // Checar se nesta linha há menção de intervalo de descanso
           for (let c = header.col; c <= colEnd && c < row.length; c++) {
             const cell = String(row[c] || '').trim();
-            if (cell.toLowerCase().includes('intervalo')) {
-              restIntervalText = cell.replace(/intervalo entre séries e exercícios:?/i, '').trim() || cell;
-              const matchSec = restIntervalText.match(/(\d+)\s*a\s*(\d+)\s*min/i);
-              if (matchSec) {
-                restIntervalSeconds = 90; // Média 1.5 min
-              }
+            if (/^intervalo\b/i.test(cell)) {
+              restIntervalText = cell.replace(/^intervalo entre séries e exercícios:?/i, '').trim() || cell;
+              restIntervalSeconds = parseRestSeconds(restIntervalText) ?? restIntervalSeconds;
               break;
             }
           }
 
           // Procurar célula que corresponda a Séries x Repetições (SxR)
           let sxrCol = -1;
-          let sxrValue = '';
-          for (let c = header.col; c <= colEnd && c < row.length; c++) {
-            const cell = String(row[c] || '').trim();
-            if (cell.match(/\b(\d+)\s*[xX]\s*([0-9]+|F|falha)\b/i)) {
+          let prescription: ReturnType<typeof parseSetPrescription> = null;
+          for (let c = header.col + 1; c <= colEnd && c < row.length; c++) {
+            prescription = parseSetPrescription(String(row[c] ?? ''));
+            if (prescription) {
               sxrCol = c;
-              sxrValue = cell;
               break;
             }
           }
 
-          if (sxrCol !== -1) {
+          if (prescription) {
             // Nome do exercício: célula à esquerda do SxR (dentro da área deste treino)
             let exerciseName = '';
             for (let c = sxrCol - 1; c >= header.col; c--) {
@@ -277,26 +292,15 @@ export function parseWorkoutWorkbook(workbook: XLSX.WorkBook): ParseResult {
                 }
               }
 
-              // Calcular sets e reps
-              let sets = 4;
-              let reps = '8';
-              const sxrMatch = sxrValue.match(/(\d+)\s*[xX]\s*([0-9]+|F|falha)/i);
-              if (sxrMatch) {
-                sets = parseInt(sxrMatch[1], 10) || 4;
-                reps = sxrMatch[2].toUpperCase();
-              }
-
               const techInfo = detectAdvancedTechnique(techniqueNotes);
 
               exercises.push({
                 id: `ex-${header.code.toLowerCase()}-${exerciseOrder}`,
                 name: exerciseName,
-                sets,
-                reps,
+                ...prescription,
                 advancedTechniqueId: techInfo.id,
                 advancedTechniqueNotes: techInfo.notes || techniqueNotes || undefined,
                 order: exerciseOrder++,
-                defaultRestSeconds: restIntervalSeconds,
               });
             }
           }
@@ -315,14 +319,14 @@ export function parseWorkoutWorkbook(workbook: XLSX.WorkBook): ParseResult {
               restIntervalText,
               restIntervalSeconds,
               aerobics: globalAerobics,
-              exercises,
+              exercises: exercises.map((exercise) => ({ ...exercise, defaultRestSeconds: restIntervalSeconds })),
             });
           }
         }
       });
     } else {
       // 2. Fallback: Abas individuais ("Treino A", "Treino B", etc.)
-      const sheetCodeMatch = sheetName.match(/treino\s*([A-Za-z0-9]+)/i);
+      const sheetCodeMatch = sheetName.match(/^treino\s+([A-Za-z]\d*|\d+)\b/i);
       if (sheetCodeMatch) {
         detectedModel = 'multi_sheet';
         const code = sheetCodeMatch[1].toUpperCase();
@@ -333,17 +337,16 @@ export function parseWorkoutWorkbook(workbook: XLSX.WorkBook): ParseResult {
           if (!Array.isArray(row) || row.length === 0) return;
 
           let sxrCol = -1;
-          let sxrValue = '';
-          for (let c = 0; c < row.length; c++) {
-            const cell = String(row[c] || '').trim();
-            if (cell.match(/\b(\d+)\s*[xX]\s*([0-9]+|F|falha)\b/i)) {
+          let prescription: ReturnType<typeof parseSetPrescription> = null;
+          for (let c = 1; c < row.length; c++) {
+            prescription = parseSetPrescription(String(row[c] ?? ''));
+            if (prescription) {
               sxrCol = c;
-              sxrValue = cell;
               break;
             }
           }
 
-          if (sxrCol !== -1) {
+          if (prescription) {
             let name = '';
             for (let c = sxrCol - 1; c >= 0; c--) {
               const cell = String(row[c] || '').trim();
@@ -363,21 +366,12 @@ export function parseWorkoutWorkbook(workbook: XLSX.WorkBook): ParseResult {
                 }
               }
 
-              let sets = 4;
-              let reps = '8';
-              const sxrMatch = sxrValue.match(/(\d+)\s*[xX]\s*([0-9]+|F|falha)/i);
-              if (sxrMatch) {
-                sets = parseInt(sxrMatch[1], 10) || 4;
-                reps = sxrMatch[2].toUpperCase();
-              }
-
               const techInfo = detectAdvancedTechnique(tech);
 
               exercises.push({
                 id: `ex-${code.toLowerCase()}-${exerciseOrder}`,
                 name,
-                sets,
-                reps,
+                ...prescription,
                 advancedTechniqueId: techInfo.id,
                 advancedTechniqueNotes: techInfo.notes || tech || undefined,
                 order: exerciseOrder++,
@@ -413,6 +407,7 @@ export function parseWorkoutWorkbook(workbook: XLSX.WorkBook): ParseResult {
   // Atualiza dayOrder sequencialmente
   sortedRoutines.forEach((r, idx) => {
     r.dayOrder = idx + 1;
+    r.aerobics = globalAerobics;
   });
 
   return {

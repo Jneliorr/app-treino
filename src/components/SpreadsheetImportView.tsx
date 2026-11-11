@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Upload,
   FileSpreadsheet,
@@ -20,17 +20,16 @@ import {
   parseWorkoutWorkbook,
   generateConsultoriaTwinExcelTemplate,
   detectAdvancedTechnique,
+  parseSetPrescription,
 } from '../services/excelWorkoutParser';
 import {
   loadRoutines,
-  saveRoutines,
   resetToTwinRoutines,
   loadWorkoutLogs,
   loadWeeks,
   createNewWeek,
   updateWeekRoutines,
   loadActiveWeekId,
-  saveActiveWeekId,
 } from '../services/storage';
 
 interface Props {
@@ -45,12 +44,25 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
   const [pasteText, setPasteText] = useState('');
   const [activeTab, setActiveTab] = useState<'new_week' | 'excel' | 'paste' | 'export'>('excel');
   const [guideModelTab, setGuideModelTab] = useState<'vertical' | 'grid'>('vertical');
+  const readRequest = useRef(0);
+
+  const resetPreview = () => {
+    readRequest.current += 1;
+    setPreviewRoutines(null);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+  };
+
+  const openTab = (tab: typeof activeTab) => {
+    resetPreview();
+    setActiveTab(tab);
+  };
 
   // Modo de destino da importação
   const [importDestination, setImportDestination] = useState<'new_week' | 'replace'>('new_week');
   const [newWeekName, setNewWeekName] = useState<string>(() => {
     const weeks = loadWeeks();
-    return `Semana ${weeks.length + 1}`;
+    return `Semana ${Math.max(0, ...weeks.map((week) => week.number)) + 1}`;
   });
   const [newWeekType, setNewWeekType] = useState<'copy' | 'twin'>('copy');
   const [selectedSourceWeekId, setSelectedSourceWeekId] = useState<string>(() => {
@@ -60,57 +72,55 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
 
   // 1-Click Restore Twin routines
   const handleRestoreTwin = () => {
-    const twin = resetToTwinRoutines();
-    onRoutinesUpdated(twin);
-    setSuccessMessage('Ficha "Consultoria Twin" (Treinos A, B, C, D, E, F) restaurada com sucesso!');
-    setTimeout(() => setSuccessMessage(null), 4000);
+    if (!window.confirm('Substituir a ficha da semana atual pelo modelo Consultoria Twin? Os rascunhos da ficha atual deixarão de aparecer.')) return;
+    resetPreview();
+    try {
+      onRoutinesUpdated(resetToTwinRoutines());
+      setSuccessMessage('Ficha da semana atual substituída pelo modelo Consultoria Twin.');
+    } catch {
+      setErrorMessage('Não foi possível atualizar a ficha da semana atual.');
+    }
   };
 
   // Parse Excel File (.xlsx, .xls, .csv)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
+    resetPreview();
+    const request = readRequest.current;
 
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const data = new Uint8Array(evt.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const result = parseWorkoutWorkbook(workbook);
-
-        if (result.routines.length > 0) {
-          setPreviewRoutines(result.routines);
-          const modelName =
-            result.detectedModel === 'grid'
-              ? 'Modelo Grade (Lado a Lado)'
-              : result.detectedModel === 'vertical'
-              ? 'Modelo Vertical (Empilhado)'
-              : result.detectedModel === 'multi_sheet'
-              ? 'Abas Individuais'
-              : 'Padrão';
-          const cardioInfo = result.aerobics
-            ? ` | Aeróbicos: ${result.aerobics.postWorkoutMin}m pós-treino e ${result.aerobics.restDayMin}m sem treino`
-            : '';
-          setSuccessMessage(
-            `Planilha lida com sucesso! ${result.routines.length} treinos identificados (${modelName}${cardioInfo}). Confira a pré-visualização abaixo e confirme a importação.`
-          );
-        } else {
-          setErrorMessage(
-            'Não foi possível encontrar treinos válidos na planilha. Certifique-se de que as células contenham títulos de treino como "Treino A: Músculos" e colunas com "Exercícios", "SxR" (ex: 4x8, 8xF) e "Técnica Avançada". Baixe a nossa "Planilha Modelo (.xlsx)" para conferir o exemplo exato.'
-          );
-        }
-      } catch (err: any) {
-        setErrorMessage('Erro ao ler arquivo Excel: ' + (err.message || 'formato inválido'));
+    try {
+      const data = await file.arrayBuffer();
+      if (request !== readRequest.current) return;
+      const result = parseWorkoutWorkbook(XLSX.read(data, { type: 'array' }));
+      if (!result.routines.length) {
+        setErrorMessage(
+          'Não foi possível encontrar treinos válidos na planilha. Use títulos como "Treino A: Músculos" e colunas com "Exercícios" e "SxR" (ex: 4x8, 3x8-12 ou 8xF). Baixe a planilha modelo para conferir o formato.'
+        );
+        return;
       }
-    };
-    reader.readAsArrayBuffer(file);
+      const modelName = {
+        grid: 'Grade',
+        vertical: 'Vertical',
+        multi_sheet: 'Abas individuais',
+        standard: 'Padrão',
+      }[result.detectedModel];
+      const cardioInfo = result.aerobics
+        ? ` | Aeróbicos: ${result.aerobics.postWorkoutMin} min pós-treino e ${result.aerobics.restDayMin} min sem treino`
+        : '';
+      setPreviewRoutines(result.routines);
+      setSuccessMessage(
+        `${result.routines.length} treinos identificados (${modelName}${cardioInfo}). Confira a pré-visualização e confirme a importação.`
+      );
+    } catch {
+      if (request === readRequest.current) setErrorMessage('Não foi possível ler o arquivo. Verifique o formato da planilha.');
+    }
   };
 
   // Text Parser
   const handleParseText = () => {
+    resetPreview();
     if (!pasteText.trim()) return;
 
     try {
@@ -119,14 +129,13 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
       let currentOrder = 1;
 
       lines.forEach((line) => {
-        // Tab, semicolon or comma separated
+        // Tabulação, ponto e vírgula ou barra vertical.
         const parts = line.split(/\t|;|\|/).map((p) => p.trim());
         if (parts.length === 0 || !parts[0]) return;
 
         const name = parts[0];
         if (
-          name.toLowerCase().includes('exercício') ||
-          name.toLowerCase().includes('exercicio') ||
+          /^exerc[ií]cios?(?:$|\s*\()/i.test(name) ||
           name.toLowerCase().includes('consultoria') ||
           name.toLowerCase().includes('clique aqui')
         ) {
@@ -136,21 +145,15 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
         const sxr = parts[1] || '4x8';
         const technique = parts[2] || '';
 
-        let sets = 4;
-        let reps = '8';
-        if (sxr.includes('x') || sxr.includes('X')) {
-          const split = sxr.split(/x/i);
-          sets = parseInt(split[0], 10) || 4;
-          reps = split[1]?.trim() || '8';
-        }
+        const prescription = parseSetPrescription(sxr);
+        if (!prescription) throw new Error(`Séries e repetições inválidas para "${name}": ${sxr}.`);
 
         const techInfo = detectAdvancedTechnique(technique);
 
         exercises.push({
           id: `paste-ex-${currentOrder}`,
           name,
-          sets,
-          reps,
+          ...prescription,
           advancedTechniqueId: techInfo.id,
           advancedTechniqueNotes: techInfo.notes || technique || undefined,
           order: currentOrder++,
@@ -181,51 +184,42 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
   // Commit preview to storage
   const handleConfirmImport = () => {
     if (!previewRoutines) return;
-
-    if (importDestination === 'new_week') {
-      const createdWeek = createNewWeek(newWeekName.trim() || undefined, undefined, previewRoutines);
-      onRoutinesUpdated(previewRoutines);
-      if (onWeekCreated) {
-        onWeekCreated(createdWeek.id);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      if (importDestination === 'new_week') {
+        const createdWeek = createNewWeek(newWeekName, undefined, previewRoutines);
+        onRoutinesUpdated(createdWeek.routines);
+        onWeekCreated?.(createdWeek.id);
+      } else {
+        if (!window.confirm('Substituir os treinos da semana atual? Os rascunhos da ficha atual deixarão de aparecer.')) return;
+        onRoutinesUpdated(updateWeekRoutines(loadActiveWeekId(), previewRoutines));
+        setSuccessMessage('Treinos da semana atual atualizados com sucesso!');
       }
-      setSuccessMessage(`Nova "${createdWeek.name}" criada com sucesso contendo ${previewRoutines.length} treinos!`);
-    } else {
-      const activeWeekId = loadActiveWeekId();
-      updateWeekRoutines(activeWeekId, previewRoutines);
-      saveRoutines(previewRoutines);
-      onRoutinesUpdated(previewRoutines);
-      setSuccessMessage('Treinos da semana atual atualizados com sucesso!');
+      setPreviewRoutines(null);
+    } catch {
+      setErrorMessage('Não foi possível salvar a ficha neste navegador. Verifique o armazenamento e tente novamente.');
     }
-
-    setPreviewRoutines(null);
   };
 
   // Criar nova semana diretamente pela aba Fichas
   const handleCreateNewWeekDirect = () => {
-    const weeks = loadWeeks();
-    const name = newWeekName.trim() || `Semana ${weeks.length + 1}`;
-
-    let baseRoutines: Routine[] = [];
-    if (newWeekType === 'copy') {
-      const source = weeks.find((w) => w.id === selectedSourceWeekId) || weeks[weeks.length - 1];
-      baseRoutines = source ? JSON.parse(JSON.stringify(source.routines)) : resetToTwinRoutines();
-    } else {
-      baseRoutines = resetToTwinRoutines();
+    resetPreview();
+    try {
+      const createdWeek = createNewWeek(newWeekName, newWeekType === 'copy' ? selectedSourceWeekId : undefined);
+      onRoutinesUpdated(createdWeek.routines);
+      onWeekCreated?.(createdWeek.id);
+    } catch {
+      setErrorMessage('Não foi possível criar a semana neste navegador. Verifique o armazenamento e tente novamente.');
     }
-
-    const createdWeek = createNewWeek(name, undefined, baseRoutines);
-    saveActiveWeekId(createdWeek.id);
-    onRoutinesUpdated(createdWeek.routines);
-    if (onWeekCreated) {
-      onWeekCreated(createdWeek.id);
-    }
-    setSuccessMessage(`Nova "${createdWeek.name}" criada com sucesso contendo ${createdWeek.routines.length} treinos!`);
-    setTimeout(() => setSuccessMessage(null), 4000);
   };
 
   // Export JSON backup
   const handleExportJSON = () => {
     const data = {
+      version: 2,
+      weeks: loadWeeks(),
+      activeWeekId: loadActiveWeekId(),
       routines: loadRoutines(),
       logs: loadWorkoutLogs(),
       exportedAt: new Date().toISOString(),
@@ -276,7 +270,7 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
             </button>
             <button
               id="new-week-quick-btn"
-              onClick={() => setActiveTab('new_week')}
+              onClick={() => openTab('new_week')}
               className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#FFAA00] hover:bg-[#FFB82E] text-[#031F38] font-black text-xs transition-all shadow-md active:scale-95"
             >
               <Plus className="w-4 h-4 stroke-[3]" />
@@ -289,7 +283,7 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
       {/* Tabs */}
       <div className="flex items-center gap-1 p-1 rounded-xl bg-[#082F52] border border-[#14527A] text-xs">
         <button
-          onClick={() => setActiveTab('new_week')}
+          onClick={() => openTab('new_week')}
           className={`flex-1 py-2 rounded-lg font-bold transition-all ${
             activeTab === 'new_week'
               ? 'bg-[#FFAA00] text-[#031F38]'
@@ -299,7 +293,7 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
           + Semana
         </button>
         <button
-          onClick={() => setActiveTab('excel')}
+          onClick={() => openTab('excel')}
           className={`flex-1 py-2 rounded-lg font-bold transition-all ${
             activeTab === 'excel'
               ? 'bg-[#FFAA00] text-[#031F38]'
@@ -309,14 +303,22 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
           Excel (.xlsx)
         </button>
         <button
-          onClick={() => setActiveTab('paste')}
+          onClick={() => openTab('paste')}
           className={`flex-1 py-2 rounded-lg font-bold transition-all ${
             activeTab === 'paste'
               ? 'bg-[#FFAA00] text-[#031F38]'
               : 'text-[#8FAFBD] hover:text-[#E8F4F8]'
           }`}
         >
-          Backup
+          Colar texto
+        </button>
+        <button
+          onClick={() => openTab('export')}
+          className={`flex-1 py-2 rounded-lg font-bold transition-all ${
+            activeTab === 'export' ? 'bg-[#FFAA00] text-[#031F38]' : 'text-[#8FAFBD] hover:text-[#E8F4F8]'
+          }`}
+        >
+          Exportar
         </button>
       </div>
 
@@ -448,7 +450,7 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
             <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
               <button
                 type="button"
-                onClick={() => setActiveTab('excel')}
+                onClick={() => openTab('excel')}
                 className="text-xs text-[#8FAFBD] hover:text-[#FFAA00] flex items-center gap-1.5 underline"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5 text-[#38C6D9]" />
@@ -642,9 +644,9 @@ Remada Cross Peg Supinada	4x8"
       {activeTab === 'export' && (
         <div className="bg-[#082F52] border border-[#14527A] rounded-2xl p-5 space-y-4">
           <div>
-            <h3 className="text-sm font-bold text-[#E8F4F8]">Backup Completo de Dados</h3>
+            <h3 className="text-sm font-bold text-[#E8F4F8]">Exportar fichas e histórico</h3>
             <p className="text-xs text-[#8FAFBD] mt-0.5">
-              Exporte todos os seus treinos atuais e histórico de cargas registradas para um arquivo JSON seguro.
+              Baixe todas as semanas e os treinos concluídos do perfil ativo em JSON. O aplicativo ainda não restaura dados desse arquivo.
             </p>
           </div>
 
@@ -654,7 +656,7 @@ Remada Cross Peg Supinada	4x8"
             className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-[#0B3A61] hover:bg-[#10466D] text-[#E8F4F8] font-bold text-xs border border-[#14527A] transition-all"
           >
             <Download className="w-4 h-4 text-[#FFAA00]" />
-            <span>Baixar Backup Completo (JSON)</span>
+            <span>Baixar fichas e histórico (JSON)</span>
           </button>
         </div>
       )}

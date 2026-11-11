@@ -1,6 +1,5 @@
 import { Routine, WorkoutWeek, WorkoutLog, ExerciseProgressionPoint, ActiveWorkoutDraft, AthleteProfile } from '../types';
 import { INITIAL_ROUTINES_TWIN } from '../data/consultoriaTwinData';
-import { SAMPLE_WORKOUT_LOGS } from '../data/sampleHistory';
 
 const WEEKS_STORAGE_KEY = 'consultoria_twin_weeks_v1';
 const ACTIVE_WEEK_KEY = 'consultoria_twin_active_week_id';
@@ -11,8 +10,16 @@ const ACTIVE_ROUTINE_KEY = 'consultoria_twin_active_routine_id';
 const THEME_MODE_STORAGE_KEY = 'consultoria_twin_theme_mode_v1';
 const ATHLETE_PROFILES_KEY = 'consultoria_twin_athlete_profiles_v1';
 const ACTIVE_PROFILE_KEY = 'consultoria_twin_active_profile_id_v1';
+// IDs reservados das sessões fictícias gravadas por versões anteriores.
+const SAMPLE_LOG_IDS = new Set(['log-twin-1', 'log-twin-2', 'log-twin-3', 'log-twin-4']);
 
 export type ThemeMode = 'dark' | 'light';
+
+export function newRecordId(prefix: string): string {
+  // Também funciona quando o app é acessado pelo celular em um servidor HTTP local.
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return prefix + Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
 
 // --- GESTÃO DE MÚLTIPLOS PERFIS DE ATLETAS ---
 export function getActiveProfileId(): string {
@@ -237,55 +244,55 @@ export function saveTheme(theme: ThemeMode): void {
   }
 }
 
-export function loadRoutineDraft(routineId: string, profileId?: string): ActiveWorkoutDraft | null {
+function getWeekDraftKey(routineId: string, weekId: string, profileId: string): string {
+  return `consultoria_twin_draft_v2_${JSON.stringify([profileId, weekId, routineId])}`;
+}
+
+function getUnambiguousRoutineWeekId(routineId: string, weeks: WorkoutWeek[]): string | undefined {
+  const matches = weeks.filter((week) => week.routines.some((routine) => routine.id === routineId));
+  return matches.length === 1 ? matches[0].id : undefined;
+}
+
+function readRoutineDraft(key: string): ActiveWorkoutDraft | null {
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  const draft = JSON.parse(raw);
+  if (typeof draft?.sessionStartTime !== 'string' || !Number.isFinite(Date.parse(draft.sessionStartTime))) return null;
+  return draft.exerciseLogs && typeof draft.exerciseLogs === 'object' ? draft : null;
+}
+
+function loadLegacyDraft(routineId: string, weekId: string, profileId: string): ActiveWorkoutDraft | null {
+  const draft = readRoutineDraft(getProfileDraftKey(routineId, profileId));
+  if (!draft) return null;
+  const draftWeekId = draft.weekId ?? getUnambiguousRoutineWeekId(routineId, loadWeeks(profileId));
+  return draftWeekId === weekId ? draft : null;
+}
+
+export function loadRoutineDraft(routineId: string, weekId: string, profileId = getActiveProfileId()): ActiveWorkoutDraft | null {
   try {
-    const key = getProfileDraftKey(routineId, profileId);
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || !parsed.exerciseLogs) return null;
-    return parsed as ActiveWorkoutDraft;
+    return readRoutineDraft(getWeekDraftKey(routineId, weekId, profileId)) ??
+      loadLegacyDraft(routineId, weekId, profileId);
   } catch (error) {
     console.warn('Erro ao carregar rascunho de treino:', error);
     return null;
   }
 }
 
-export function isRoutineDraftActive(routineId: string, profileId?: string): boolean {
+export function saveRoutineDraft(draft: ActiveWorkoutDraft & { weekId: string }, profileId = getActiveProfileId()): void {
   try {
-    const draft = loadRoutineDraft(routineId, profileId);
-    if (!draft || !draft.exerciseLogs) return false;
-
-    // True if at least one set was checked off as completed
-    const hasAnyCompletedSet = Object.values(draft.exerciseLogs).some(
-      (sets) => Array.isArray(sets) && sets.some((s) => s.completed)
-    );
-    if (hasAnyCompletedSet) return true;
-
-    // True if timer has counted actual training seconds
-    if (typeof draft.elapsedSeconds === 'number' && draft.elapsedSeconds > 0) {
-      return true;
-    }
-
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-export function saveRoutineDraft(draft: ActiveWorkoutDraft, profileId?: string): void {
-  try {
-    const key = getProfileDraftKey(draft.routineId, profileId);
+    const key = getWeekDraftKey(draft.routineId, draft.weekId, profileId);
     localStorage.setItem(key, JSON.stringify(draft));
   } catch (error) {
     console.error('Erro ao salvar rascunho de treino:', error);
   }
 }
 
-export function clearRoutineDraft(routineId: string, profileId?: string): void {
+export function clearRoutineDraft(routineId: string, weekId: string, profileId = getActiveProfileId()): void {
   try {
-    const key = getProfileDraftKey(routineId, profileId);
-    localStorage.removeItem(key);
+    localStorage.removeItem(getWeekDraftKey(routineId, weekId, profileId));
+    if (loadLegacyDraft(routineId, weekId, profileId)) {
+      localStorage.removeItem(getProfileDraftKey(routineId, profileId));
+    }
   } catch (error) {
     console.error('Erro ao limpar rascunho de treino:', error);
   }
@@ -390,14 +397,8 @@ export function loadWeeks(profileId?: string): WorkoutWeek[] {
   }
 }
 
-export function saveWeeks(weeks: WorkoutWeek[], profileId?: string): void {
-  try {
-    const pid = profileId || getActiveProfileId();
-    const weeksKey = getProfileStorageKey(WEEKS_STORAGE_KEY, pid);
-    localStorage.setItem(weeksKey, JSON.stringify(weeks));
-  } catch (error) {
-    console.error('Erro ao salvar semanas:', error);
-  }
+function saveWeeks(weeks: WorkoutWeek[], profileId: string): void {
+  localStorage.setItem(getProfileStorageKey(WEEKS_STORAGE_KEY, profileId), JSON.stringify(weeks));
 }
 
 export function loadActiveWeekId(profileId?: string): string {
@@ -430,37 +431,11 @@ export function createNewWeek(
   const pid = getActiveProfileId();
   const weeks = loadWeeks(pid);
   const nextNum = weeks.length > 0 ? Math.max(...weeks.map((w) => w.number)) + 1 : 1;
-  const newId = `semana-${Date.now()}`;
+  const newId = newRecordId('semana-');
   const weekName = customName?.trim() || `Semana ${nextNum}`;
 
-  let routinesToUse: Routine[] = [];
-
-  if (customRoutines && customRoutines.length > 0) {
-    routinesToUse = customRoutines;
-  } else if (copyFromWeekId) {
-    const sourceWeek = weeks.find((w) => w.id === copyFromWeekId);
-    if (sourceWeek) {
-      routinesToUse = sourceWeek.routines.map((r, rIdx) => ({
-        ...r,
-        id: `${newId}-rotina-${r.code.toLowerCase()}-${rIdx + 1}`,
-        exercises: r.exercises.map((ex, exIdx) => ({
-          ...ex,
-          id: `${newId}-ex-${r.code.toLowerCase()}-${exIdx + 1}`,
-        })),
-      }));
-    }
-  }
-
-  if (routinesToUse.length === 0) {
-    routinesToUse = INITIAL_ROUTINES_TWIN.map((r, rIdx) => ({
-      ...r,
-      id: `${newId}-rotina-${r.code.toLowerCase()}-${rIdx + 1}`,
-      exercises: r.exercises.map((ex, exIdx) => ({
-        ...ex,
-        id: `${newId}-ex-${r.code.toLowerCase()}-${exIdx + 1}`,
-      })),
-    }));
-  }
+  const source = customRoutines?.length ? customRoutines : weeks.find((w) => w.id === copyFromWeekId)?.routines;
+  const routinesToUse = copyRoutines(source?.length ? source : INITIAL_ROUTINES_TWIN, newId);
 
   const newWeek: WorkoutWeek = {
     id: newId,
@@ -477,16 +452,28 @@ export function createNewWeek(
   return newWeek;
 }
 
-export function updateWeekRoutines(weekId: string, routines: Routine[]): void {
+function copyRoutines(routines: Routine[], namespace: string): Routine[] {
+  return routines.map((routine, routineIndex) => {
+    const id = `${namespace}-rotina-${routineIndex + 1}`;
+    return {
+      ...routine,
+      id,
+      exercises: routine.exercises.map((exercise, exerciseIndex) => ({
+        ...exercise,
+        id: `${id}-ex-${exerciseIndex + 1}`,
+      })),
+    };
+  });
+}
+
+export function updateWeekRoutines(weekId: string, routines: Routine[]): Routine[] {
   const pid = getActiveProfileId();
   const weeks = loadWeeks(pid);
-  const updated = weeks.map((w) => (w.id === weekId ? { ...w, routines } : w));
+  if (!weeks.some((week) => week.id === weekId)) throw new Error('Semana de treino não encontrada.');
+  const replacement = copyRoutines(routines, newRecordId(`${weekId}-`));
+  const updated = weeks.map((w) => (w.id === weekId ? { ...w, routines: replacement } : w));
   saveWeeks(updated, pid);
-
-  const activeId = loadActiveWeekId(pid);
-  if (activeId === weekId) {
-    saveRoutines(routines, pid);
-  }
+  return replacement;
 }
 
 export function deleteWeek(weekId: string): WorkoutWeek[] {
@@ -497,23 +484,15 @@ export function deleteWeek(weekId: string): WorkoutWeek[] {
   if (filtered.length === 0) {
     // Se excluiu a única semana existente, recria uma nova Semana 1 limpa
     const resetWeek: WorkoutWeek = {
-      id: `semana-${Date.now()}`,
+      id: newRecordId('semana-'),
       number: 1,
       name: 'Semana 1',
       description: 'Ficha de Treinos • Semana 1',
       createdAt: new Date().toISOString(),
-      routines: INITIAL_ROUTINES_TWIN.map((r, rIdx) => ({
-        ...r,
-        id: `rotina-${r.code.toLowerCase()}-${pid}-${rIdx + 1}`,
-        exercises: r.exercises.map((ex, exIdx) => ({
-          ...ex,
-          id: `ex-${r.code.toLowerCase()}-${pid}-${exIdx + 1}`,
-        })),
-      })),
+      routines: copyRoutines(INITIAL_ROUTINES_TWIN, newRecordId('ficha-')),
     };
     saveWeeks([resetWeek], pid);
     saveActiveWeekId(resetWeek.id, pid);
-    saveRoutines(resetWeek.routines, pid);
     return [resetWeek];
   }
 
@@ -522,7 +501,6 @@ export function deleteWeek(weekId: string): WorkoutWeek[] {
   const activeId = loadActiveWeekId(pid);
   if (activeId === weekId) {
     saveActiveWeekId(filtered[0].id, pid);
-    saveRoutines(filtered[0].routines, pid);
   }
   return filtered;
 }
@@ -543,27 +521,8 @@ export function loadRoutines(profileId?: string): Routine[] {
   }
 }
 
-export function saveRoutines(routines: Routine[], profileId?: string): void {
-  try {
-    const pid = profileId || getActiveProfileId();
-    const routinesKey = getProfileStorageKey(ROUTINES_STORAGE_KEY, pid);
-    localStorage.setItem(routinesKey, JSON.stringify(routines));
-
-    const weeks = loadWeeks(pid);
-    const activeWeekId = loadActiveWeekId(pid);
-    const updated = weeks.map((w) => (w.id === activeWeekId ? { ...w, routines } : w));
-    saveWeeks(updated, pid);
-  } catch (error) {
-    console.error('Erro ao salvar rotinas:', error);
-  }
-}
-
 export function resetToTwinRoutines(): Routine[] {
-  const pid = getActiveProfileId();
-  saveRoutines(INITIAL_ROUTINES_TWIN, pid);
-  const activeWeekId = loadActiveWeekId(pid);
-  updateWeekRoutines(activeWeekId, INITIAL_ROUTINES_TWIN);
-  return INITIAL_ROUTINES_TWIN;
+  return updateWeekRoutines(loadActiveWeekId(), INITIAL_ROUTINES_TWIN);
 }
 
 export function loadWorkoutLogs(profileId?: string): WorkoutLog[] {
@@ -571,36 +530,24 @@ export function loadWorkoutLogs(profileId?: string): WorkoutLog[] {
     const pid = profileId || getActiveProfileId();
     const logsKey = getProfileStorageKey(WORKOUT_LOGS_STORAGE_KEY, pid);
     const raw = localStorage.getItem(logsKey);
-    if (!raw) {
-      if (pid === 'default') {
-        saveWorkoutLogs(SAMPLE_WORKOUT_LOGS, 'default');
-        return SAMPLE_WORKOUT_LOGS;
-      }
-      return [];
-    }
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) {
       return [];
     }
-    return parsed;
+    return parsed.filter((log: WorkoutLog) => !SAMPLE_LOG_IDS.has(log.id));
   } catch (error) {
     console.warn('Erro ao carregar logs de treino:', error);
     return [];
   }
 }
 
-export function saveWorkoutLogs(logs: WorkoutLog[], profileId?: string): void {
-  try {
-    const pid = profileId || getActiveProfileId();
-    const logsKey = getProfileStorageKey(WORKOUT_LOGS_STORAGE_KEY, pid);
-    localStorage.setItem(logsKey, JSON.stringify(logs));
-  } catch (error) {
-    console.error('Erro ao salvar logs de treino:', error);
-  }
+function saveWorkoutLogs(logs: WorkoutLog[], profileId: string): void {
+  const logsKey = getProfileStorageKey(WORKOUT_LOGS_STORAGE_KEY, profileId);
+  localStorage.setItem(logsKey, JSON.stringify(logs));
 }
 
-export function addWorkoutLog(log: WorkoutLog): WorkoutLog[] {
-  const pid = getActiveProfileId();
+export function addWorkoutLog(log: WorkoutLog, pid = getActiveProfileId()): WorkoutLog[] {
   const currentLogs = loadWorkoutLogs(pid);
   const updated = [log, ...currentLogs];
   saveWorkoutLogs(updated, pid);
@@ -615,14 +562,21 @@ export function deleteWorkoutLog(logId: string): WorkoutLog[] {
   return updated;
 }
 
+export function findLastWorkoutForRoutine(
+  logs: WorkoutLog[], weeks: WorkoutWeek[], weekId: string, routineId: string
+): WorkoutLog | undefined {
+  const legacyWeekId = getUnambiguousRoutineWeekId(routineId, weeks);
+  return logs.filter((log) => log.routineId === routineId && (log.weekId ?? legacyWeekId) === weekId)
+    .sort((a, b) => Date.parse(b.completedAt) - Date.parse(a.completedAt))[0];
+}
 
-export function getLastSessionForExercise(exerciseName: string): {
+export function getLastSessionForExercise(exerciseName: string, profileId?: string): {
   date: string;
   weights: number[];
   reps: number[];
   maxWeight: number;
 } | null {
-  const logs = loadWorkoutLogs();
+  const logs = loadWorkoutLogs(profileId);
   const lowerName = exerciseName.toLowerCase().trim();
 
   // Search from newest to oldest

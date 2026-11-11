@@ -26,14 +26,13 @@ import {
 import { Routine, WorkoutWeek } from '../types';
 import {
   loadWeeks,
-  saveWeeks,
   loadActiveWeekId,
   saveActiveWeekId,
   createNewWeek,
   deleteWeek,
   loadRoutineDraft,
   clearRoutineDraft,
-  isRoutineDraftActive,
+  findLastWorkoutForRoutine,
   loadWorkoutLogs,
 } from '../services/storage';
 import {
@@ -92,6 +91,7 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
 
   // Modal para resetar rascunho de um treino específico
   const [routineToReset, setRoutineToReset] = useState<Routine | null>(null);
+  const [weekError, setWeekError] = useState('');
 
   const toggleAudioEnabled = () => {
     setIsAudioEnabled((prev) => {
@@ -135,8 +135,8 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
   };
 
   const handleConfirmResetRoutine = () => {
-    if (!routineToReset) return;
-    clearRoutineDraft(routineToReset.id);
+    if (!routineToReset || !selectedWeek) return;
+    clearRoutineDraft(routineToReset.id, selectedWeek.id);
     setRoutineToReset(null);
   };
 
@@ -150,7 +150,8 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
   };
 
   const handleOpenCreateModal = () => {
-    const nextNum = weeks.length + 1;
+    setWeekError('');
+    const nextNum = Math.max(0, ...weeks.map((week) => week.number)) + 1;
     setNewWeekName(`Semana ${nextNum}`);
     setCopySourceWeekId(selectedWeek?.id || weeks[weeks.length - 1]?.id || '');
     setCreateOption('copy');
@@ -164,14 +165,17 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
       return;
     }
 
-    const created = createNewWeek(
-      newWeekName.trim() || undefined,
-      createOption === 'copy' ? copySourceWeekId : undefined
-    );
-    const updated = loadWeeks();
-    setWeeks(updated);
-    setSelectedWeekId(created.id);
-    setIsNewWeekModalOpen(false);
+    try {
+      const created = createNewWeek(
+        newWeekName.trim() || undefined,
+        createOption === 'copy' ? copySourceWeekId : undefined
+      );
+      setWeeks(loadWeeks());
+      setSelectedWeekId(created.id);
+      setIsNewWeekModalOpen(false);
+    } catch {
+      setWeekError('Não foi possível criar a semana neste navegador. Verifique o armazenamento e tente novamente.');
+    }
   };
 
   // Modal de confirmação para deletar semana
@@ -180,12 +184,17 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
   const handleConfirmDeleteWeek = () => {
     if (!weekToDelete) return;
 
-    const remaining = deleteWeek(weekToDelete.id);
-    setWeeks(remaining);
-    const nextId = remaining.find((w) => w.id === selectedWeekId)?.id || remaining[0]?.id || '';
-    setSelectedWeekId(nextId);
-    saveActiveWeekId(nextId);
-    setWeekToDelete(null);
+    try {
+      const remaining = deleteWeek(weekToDelete.id);
+      setWeeks(remaining);
+      const nextId = remaining.find((w) => w.id === selectedWeekId)?.id || remaining[0]?.id || '';
+      setSelectedWeekId(nextId);
+      saveActiveWeekId(nextId);
+      setWeekToDelete(null);
+      setWeekError('');
+    } catch {
+      setWeekError('Não foi possível excluir a semana neste navegador. Tente novamente.');
+    }
   };
 
   return (
@@ -424,21 +433,17 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
         </div>
 
         {selectedWeek?.routines.map((routine) => {
-          const draft = loadRoutineDraft(routine.id);
+          const draft = loadRoutineDraft(routine.id, selectedWeek.id);
           const completedSetsCount = draft?.exerciseLogs
             ? Object.values(draft.exerciseLogs).reduce(
                 (acc, sets) => acc + (Array.isArray(sets) ? sets.filter((s) => s.completed).length : 0),
                 0
               )
             : 0;
-          const isTimerStarted = typeof draft?.elapsedSeconds === 'number' && draft.elapsedSeconds > 0;
-          const hasRealProgress = isRoutineDraftActive(routine.id) && (completedSetsCount > 0 || isTimerStarted);
+          const hasRealProgress = Boolean(draft);
           const isExpanded = expandedPreviewRoutineId === routine.id;
 
-          // Último treino concluído deste tipo
-          const lastLog = workoutLogs
-            .filter((l) => l.routineCode === routine.code || l.routineId === routine.id)
-            .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())[0];
+          const lastLog = findLastWorkoutForRoutine(workoutLogs, weeks, selectedWeek.id, routine.id);
 
           return (
             <div
@@ -464,7 +469,7 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
                         </span>
                       )}
                       {lastLog && (
-                        <span className="text-[10px] text-[#64879A] hidden xs:inline">
+                        <span className="text-[10px] text-[#8FAFBD]">
                           Feito em: {new Date(lastLog.completedAt).toLocaleDateString('pt-BR')}
                         </span>
                       )}
@@ -712,6 +717,7 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
               </div>
             </div>
 
+            {weekError && <p role="alert" className="text-xs text-red-300">{weekError}</p>}
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#14527A]">
               <button
                 type="button"
@@ -747,13 +753,14 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
                 <p className="text-xs text-[#8FAFBD] mt-1">
                   {weeks.length <= 1 ? (
                     <>
-                      Esta é a sua única semana. Ao excluir, todos os treinos e anotações serão apagados e uma <strong className="text-[#FFAA00]">nova Semana 1 limpa</strong> será gerada no lugar.
+                      Esta é a sua única semana. A ficha será substituída por uma nova Semana 1.
                     </>
                   ) : (
                     <>
-                      Todos os <strong className="text-[#E8F4F8]">{weekToDelete.routines.length} treinos</strong> e anotações desta semana serão removidos permanentemente.
+                      A ficha com {weekToDelete.routines.length} treinos será removida.
                     </>
                   )}
+                  {' '}Você perderá acesso aos rascunhos desta ficha. Os treinos concluídos continuarão no histórico.
                 </p>
               </div>
             </div>
@@ -773,10 +780,14 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
               </div>
             </div>
 
+            {weekError && <p role="alert" className="text-xs text-red-300">{weekError}</p>}
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#14527A]">
               <button
                 type="button"
-                onClick={() => setWeekToDelete(null)}
+                onClick={() => {
+                  setWeekToDelete(null);
+                  setWeekError('');
+                }}
                 className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#8FAFBD] hover:text-[#E8F4F8] transition-colors cursor-pointer"
               >
                 Cancelar

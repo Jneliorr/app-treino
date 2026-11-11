@@ -1,20 +1,24 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Acompanhamento de treinos
 
-# Run and deploy your AI Studio app
+Aplicativo para organizar fichas por semana, registrar séries, cargas e repetições e consultar o histórico de cada atleta. O cronômetro e o rascunho permitem retomar uma sessão depois de voltar à lista de semanas ou recarregar a página.
 
-This contains everything you need to run your app locally.
+## Rodar localmente
 
-View your app in AI Studio: https://ai.studio/apps/327fed06-e9dd-44d6-b4c8-f27c961606b2
+Instale o Node.js 22 ou mais recente e execute:
 
-## Run Locally
+```sh
+npm install
+npm run dev
+```
 
-**Prerequisites:**  Node.js
+Abra `http://localhost:3000`. O aplicativo não exige chave de API nem configuração do Firebase. A tela de arquitetura do Firestore apresenta uma proposta de integração.
 
+Os dados ficam no armazenamento local do navegador e não são sincronizados entre dispositivos. Em **Fichas → Exportar**, você pode baixar as semanas e os treinos concluídos do perfil ativo em JSON. O aplicativo ainda não restaura dados desse arquivo.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Verificações
+
+```sh
+npm run lint
+npm test
+npm run build
+```
