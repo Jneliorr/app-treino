@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "Routine": {
+      "title": "Routine",
+      "description": "Ficha de treino fixa prescrita pelo personal (ex: Treino A, Treino B)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "targetMuscles": { "type": "string" },
+        "dayOrder": { "type": "number" },
+        "restIntervalSeconds": { "type": "number" }
+      },
+      "required": ["id", "code", "name", "targetMuscles"]
+    },
+    "WorkoutLog": {
+      "title": "WorkoutLog",
+      "description": "Registro cronológico de sessão de treino e cargas levantadas",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "routineId": { "type": "string" },
+        "routineCode": { "type": "string" },
+        "startedAt": { "type": "string" },
+        "completedAt": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "totalTonnageKg": { "type": "number" }
+      },
+      "required": ["id", "userId", "routineId", "startedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/routines/{routineId}": {
+      "schema": "Routine",
+      "description": "Treinos fixos (A, B, C...) do usuário"
+    },
+    "/users/{userId}/workout_logs/{logId}": {
+      "schema": "WorkoutLog",
+      "description": "Histórico de sessões e cargas executadas pelo usuário"
+    }
+  }
+}

@@ -1,0 +1,857 @@
+@import "tailwindcss";
+
+@theme {
+  /* Apple Human Interface Guidelines Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'SF Pro', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'JetBrains Mono', ui-monospace, monospace;
+
+  /* App Global Palette Tokens (Dark Mode: Pure Black and Shades of Gray) */
+  --color-brand-bg: #0A0A0A;
+  --color-brand-card: #141416;
+  --color-brand-card-secondary: #1F1F23;
+  --color-brand-surface: #28282E;
+  --color-brand-border: #2E2E35;
+
+  --color-brand-text-primary: #F4F4F6;
+  --color-brand-text-secondary: #A1A1AA;
+  --color-brand-text-muted: #71717A;
+
+  --color-brand-primary: #FFAA00;
+  --color-brand-primary-hover: #FFB82E;
+  --color-brand-success: #00C98B;
+  --color-brand-info: #38C6D9;
+  --color-brand-warning: #FFD166;
+  --color-brand-danger: #FF5C5C;
+
+  /* Overwrite default slate scale with neutral charcoal and gray hierarchy */
+  --color-slate-50: #ffffff;
+  --color-slate-100: #F4F4F6;
+  --color-slate-200: #E4E4E7;
+  --color-slate-300: #D4D4D8;
+  --color-slate-400: #A1A1AA;
+  --color-slate-500: #71717A;
+  --color-slate-600: #52525B;
+  --color-slate-700: #2E2E35;
+  --color-slate-750: #28282E;
+  --color-slate-800: #1F1F23;
+  --color-slate-850: #18181B;
+  --color-slate-900: #141416;
+  --color-slate-950: #0A0A0A;
+
+  /* Semantic alignments */
+  --color-amber-400: #FFAA00;
+  --color-amber-500: #FFAA00;
+  --color-amber-600: #FFB82E;
+
+  --color-emerald-400: #00C98B;
+  --color-emerald-500: #00C98B;
+  --color-emerald-600: #00a874;
+
+  --color-cyan-400: #38C6D9;
+  --color-cyan-500: #38C6D9;
+
+  --color-yellow-400: #FFD166;
+  --color-yellow-500: #FFD166;
+
+  --color-rose-400: #FF5C5C;
+  --color-rose-500: #FF5C5C;
+  --color-red-400: #FF5C5C;
+  --color-red-500: #FF5C5C;
+}
+
+:root {
+  color-scheme: dark;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: -0.01em;
+
+  --app-bg: #0A0A0A;
+  --app-card: #141416;
+  --app-card-secondary: #1F1F23;
+  --app-surface: #28282E;
+  --app-border: #2E2E35;
+
+  --app-text-primary: #F4F4F6;
+  --app-text-secondary: #A1A1AA;
+  --app-text-muted: #71717A;
+
+  --app-primary: #FFAA00;
+  --app-primary-hover: #FFB82E;
+  --app-success: #00C98B;
+  --app-info: #38C6D9;
+  --app-warning: #FFD166;
+  --app-danger: #FF5C5C;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #0A0A0A;
+  color: #F4F4F6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Numeric inputs & timers */
+input[type="number"],
+input[inputmode="numeric"],
+input[inputmode="decimal"] {
+  font-feature-settings: "tnum" 1;
+}
+
+/* Custom glow utility for primary button */
+.glow-primary {
+  box-shadow: 0 10px 25px -3px rgba(255, 170, 0, 0.3), 0 4px 10px -2px rgba(255, 170, 0, 0.15);
+}
+
+.glow-primary:hover {
+  box-shadow: 0 14px 30px -3px rgba(255, 170, 0, 0.45), 0 6px 14px -2px rgba(255, 170, 0, 0.25);
+}
+
+/* Glow for success */
+.glow-success {
+  box-shadow: 0 10px 25px -3px rgba(0, 201, 139, 0.3), 0 4px 10px -2px rgba(0, 201, 139, 0.15);
+}
+
+/* ==========================================================================
+   DARK THEME: PRETO E TONS DE CINZA (Neutral OLED & Deep Charcoal Architecture)
+   Substituição completa dos tons azuis por preto absoluto e tons de cinza.
+   ========================================================================== */
+
+/* Base Canvas & Sub-surface (#031F38, #031525, #051829 -> Preto Absoluto / #0A0A0A) */
+html:not(.light) .bg-\[\#031F38\],
+html:not(.light) [class*="bg-[#031F38]"],
+html:not(.light) .bg-\[\#031525\],
+html:not(.light) [class*="bg-[#031525]"],
+html:not(.light) .bg-\[\#051829\],
+html:not(.light) [class*="bg-[#051829]"] {
+  background-color: #0A0A0A;
+}
+
+html:not(.light) .bg-\[\#031F38\]\/95 { background-color: rgba(10, 10, 10, 0.95); }
+html:not(.light) .bg-\[\#031F38\]\/90 { background-color: rgba(10, 10, 10, 0.90); }
+html:not(.light) .bg-\[\#031F38\]\/85 { background-color: rgba(10, 10, 10, 0.85); }
+html:not(.light) .bg-\[\#031F38\]\/80 { background-color: rgba(10, 10, 10, 0.80); }
+html:not(.light) .bg-\[\#031F38\]\/70 { background-color: rgba(10, 10, 10, 0.70); }
+html:not(.light) .bg-\[\#031F38\]\/60 { background-color: rgba(10, 10, 10, 0.60); }
+html:not(.light) .bg-\[\#031F38\]\/50 { background-color: rgba(10, 10, 10, 0.50); }
+html:not(.light) .bg-\[\#031F38\]\/40 { background-color: rgba(10, 10, 10, 0.40); }
+html:not(.light) .bg-\[\#031F38\]\/30 { background-color: rgba(10, 10, 10, 0.30); }
+html:not(.light) .bg-\[\#031F38\]\/20 { background-color: rgba(255, 255, 255, 0.05); }
+html:not(.light) .bg-\[\#031F38\]\/10 { background-color: rgba(255, 255, 255, 0.03); }
+
+/* Primary Cards & Container Surfaces (#082F52 -> Cinza Carvão Profundo #141416) */
+html:not(.light) .bg-\[\#082F52\],
+html:not(.light) [class*="bg-[#082F52]"] {
+  background-color: #141416;
+}
+
+html:not(.light) .bg-\[\#082F52\]\/95 { background-color: rgba(20, 20, 22, 0.95); }
+html:not(.light) .bg-\[\#082F52\]\/90 { background-color: rgba(20, 20, 22, 0.90); }
+html:not(.light) .bg-\[\#082F52\]\/80 { background-color: rgba(20, 20, 22, 0.80); }
+html:not(.light) .bg-\[\#082F52\]\/60 { background-color: rgba(20, 20, 22, 0.60); }
+html:not(.light) .bg-\[\#082F52\]\/50 { background-color: rgba(20, 20, 22, 0.50); }
+html:not(.light) .bg-\[\#082F52\]\/40 { background-color: rgba(20, 20, 22, 0.40); }
+
+/* Secondary Panels, Inner Containers & Sets (#0B3A61 -> Cinza Grafite #1F1F23) */
+html:not(.light) .bg-\[\#0B3A61\],
+html:not(.light) [class*="bg-[#0B3A61]"] {
+  background-color: #1F1F23;
+}
+
+html:not(.light) .bg-\[\#0B3A61\]\/90 { background-color: rgba(31, 31, 35, 0.90); }
+html:not(.light) .bg-\[\#0B3A61\]\/80 { background-color: rgba(31, 31, 35, 0.80); }
+html:not(.light) .bg-\[\#0B3A61\]\/60 { background-color: rgba(31, 31, 35, 0.60); }
+html:not(.light) .bg-\[\#0B3A61\]\/50 { background-color: rgba(31, 31, 35, 0.50); }
+html:not(.light) .bg-\[\#0B3A61\]\/40 { background-color: rgba(31, 31, 35, 0.40); }
+
+/* Tertiary Surfaces (#10466D -> Cinza Médio #28282E) */
+html:not(.light) .bg-\[\#10466D\],
+html:not(.light) [class*="bg-[#10466D]"] {
+  background-color: #28282E;
+}
+
+/* Quaternary / Inner borders as backgrounds (#14527A -> Cinza #2E2E35) */
+html:not(.light) .bg-\[\#14527A\],
+html:not(.light) [class*="bg-[#14527A]"] {
+  background-color: #2E2E35;
+}
+html:not(.light) .bg-\[\#14527A\]\/50 { background-color: rgba(46, 46, 53, 0.50); }
+html:not(.light) .bg-\[\#14527A\]\/40 { background-color: rgba(46, 46, 53, 0.40); }
+
+/* Hover States em Modo Escuro (Tons de cinza) */
+html:not(.light) .hover\:bg-\[\#082F52\]:hover,
+html:not(.light) [class*="hover:bg-[#082F52]"]:hover {
+  background-color: #1A1A1E;
+}
+
+html:not(.light) .hover\:bg-\[\#0B3A61\]:hover,
+html:not(.light) .hover\:bg-\[\#0B3A61\]\/60:hover,
+html:not(.light) .hover\:bg-\[\#0B3A61\]\/50:hover,
+html:not(.light) .hover\:bg-\[\#0B3A61\]\/40:hover,
+html:not(.light) [class*="hover:bg-[#0B3A61]"]:hover {
+  background-color: #28282E;
+}
+
+html:not(.light) .hover\:bg-\[\#10466D\]:hover,
+html:not(.light) [class*="hover:bg-[#10466D]"]:hover {
+  background-color: #33333A;
+}
+
+html:not(.light) .hover\:bg-\[\#14527A\]:hover,
+html:not(.light) [class*="hover:bg-[#14527A]"]:hover {
+  background-color: #3B3B44;
+}
+
+/* Border Overrides em Modo Escuro (Tons de cinza neutros) */
+html:not(.light) .border-\[\#14527A\],
+html:not(.light) [class*="border-[#14527A]"] {
+  border-color: #2E2E35;
+}
+html:not(.light) .border-\[\#14527A\]\/80 { border-color: rgba(46, 46, 53, 0.80); }
+html:not(.light) .border-\[\#14527A\]\/70 { border-color: rgba(46, 46, 53, 0.70); }
+html:not(.light) .border-\[\#14527A\]\/60 { border-color: rgba(46, 46, 53, 0.60); }
+html:not(.light) .border-\[\#14527A\]\/50 { border-color: rgba(46, 46, 53, 0.50); }
+html:not(.light) .border-\[\#14527A\]\/40 { border-color: rgba(46, 46, 53, 0.40); }
+html:not(.light) .border-\[\#14527A\]\/30 { border-color: rgba(46, 46, 53, 0.30); }
+html:not(.light) .border-\[\#14527A\]\/25 { border-color: rgba(46, 46, 53, 0.25); }
+html:not(.light) .border-\[\#14527A\]\/20 { border-color: rgba(46, 46, 53, 0.20); }
+
+html:not(.light) .border-\[\#082F52\] { border-color: #1F1F23; }
+html:not(.light) .border-\[\#0B3A61\] { border-color: #2A2A30; }
+
+/* Tipografia em Modo Escuro (Sem nuances azuladas) */
+html:not(.light) .text-\[\#E8F4F8\],
+html:not(.light) [class*="text-[#E8F4F8]"] {
+  color: #F4F4F6;
+}
+
+html:not(.light) .text-\[\#8FAFBD\],
+html:not(.light) [class*="text-[#8FAFBD]"] {
+  color: #A1A1AA;
+}
+
+html:not(.light) .text-\[\#64879A\],
+html:not(.light) [class*="text-[#64879A]"] {
+  color: #71717A;
+}
+
+html:not(.light) .hover\:text-\[\#E8F4F8\]:hover {
+  color: #FFFFFF;
+}
+
+/* Texto escuro dentro de botões amarelos/verdes: preto absoluto em vez de azul */
+html:not(.light) .text-\[\#031F38\] {
+  color: #0A0A0A;
+}
+html:not(.light) .bg-\[\#FFAA00\] .text-\[\#031F38\],
+html:not(.light) .bg-\[\#FFAA00\].text-\[\#031F38\],
+html:not(.light) .bg-\[\#00C98B\] .text-\[\#031F38\],
+html:not(.light) .bg-\[\#00C98B\].text-\[\#031F38\],
+html:not(.light) .bg-\[\#FF5C5C\] .text-\[\#031F38\],
+html:not(.light) .bg-\[\#FF5C5C\].text-\[\#031F38\] {
+  color: #0A0A0A;
+}
+
+/* Gradientes em tons de cinza em Modo Escuro */
+html:not(.light) .bg-gradient-to-r.from-\[\#0B3A61\].to-\[\#082F52\],
+html:not(.light) [class*="from-[#0B3A61]"][class*="to-[#082F52]"] {
+  background-image: linear-gradient(to right, #1F1F23, #141416);
+}
+
+/* ==========================================================================
+   LEANDRO TWIN LIGHT THEME (Assessoria Esportiva Online)
+   Colors extracted from the official Leandro Twin portal:
+   - Primary Accent: #CE3426 / #D83D31 (Signature Twin Red)
+   - Accent Hover: #B82B1F
+   - Background Canvas: #F5F6F8 (Crisp clean light surface)
+   - Cards / Containers: #FFFFFF (Clean white with subtle shadow)
+   - Secondary Panels & Rows: #F0F2F5 / #EAECEF (Soft neutral menu gray)
+   - Input Backgrounds: #FFFFFF or #F8F9FA
+   - Borders: #D5D8DC / #E2E4E8 (Clean gray borders)
+   - Primary Typography: #1A1A1A (Rich charcoal black)
+   - Secondary Typography: #4B5563 (Dark slate gray)
+   - Muted Typography: #6B7280 (Neutral gray)
+   ========================================================================== */
+
+html.light,
+html[data-theme="light"],
+[data-theme="light"] {
+  color-scheme: light;
+
+  --app-bg: #F5F6F8;
+  --app-card: #FFFFFF;
+  --app-card-secondary: #F0F2F5;
+  --app-surface: #E5E7EB;
+  --app-border: #D5D8DC;
+
+  --app-text-primary: #1A1A1A;
+  --app-text-secondary: #4B5563;
+  --app-text-muted: #6B7280;
+
+  --app-primary: #CE3426;
+  --app-primary-hover: #B82B1F;
+}
+
+html.light body,
+html[data-theme="light"] body {
+  background-color: #F5F6F8 !important;
+  color: #1A1A1A !important;
+}
+
+/* Header, Side Drawer & Navigation */
+html.light header {
+  background-color: rgba(255, 255, 255, 0.98) !important;
+  border-bottom-color: #E2E4E8 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+html.light #side-hamburger-drawer {
+  background-color: #FFFFFF !important;
+  border-right-color: #E2E4E8 !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+}
+
+html.light #drawer-backdrop {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Base Canvas & Sub-surface Overrides (#031F38) */
+html.light .bg-\[\#031F38\],
+html.light [class*="bg-[#031F38]"] {
+  background-color: #F5F6F8 !important;
+}
+
+/* High-opacity backdrops & overlays */
+html.light .bg-\[\#031F38\]\/95,
+html.light .bg-\[\#031F38\]\/90,
+html.light .bg-\[\#031F38\]\/85,
+html.light .bg-\[\#031F38\]\/80,
+html.light .bg-\[\#031F38\]\/70 {
+  background-color: rgba(255, 255, 255, 0.96) !important;
+}
+
+/* Low-opacity badges */
+html.light .bg-\[\#031F38\]\/20,
+html.light .bg-\[\#031F38\]\/15,
+html.light .bg-\[\#031F38\]\/10 {
+  background-color: #E5E7EB !important;
+}
+
+/* Primary Card & Container Surface Overrides (#082F52) */
+html.light .bg-\[\#082F52\],
+html.light .bg-\[\#082F52\]\/95,
+html.light .bg-\[\#082F52\]\/90,
+html.light .bg-\[\#082F52\]\/80,
+html.light .bg-\[\#082F52\]\/60,
+html.light .bg-\[\#082F52\]\/50,
+html.light [class*="bg-[#082F52]"] {
+  background-color: #FFFFFF !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Secondary Panels, Inner Containers & Set Row Overrides (#0B3A61) */
+html.light .bg-\[\#0B3A61\],
+html.light .bg-\[\#0B3A61\]\/90,
+html.light .bg-\[\#0B3A61\]\/80,
+html.light .bg-\[\#0B3A61\]\/60,
+html.light .bg-\[\#0B3A61\]\/50,
+html.light .bg-\[\#0B3A61\]\/40,
+html.light [class*="bg-[#0B3A61]"] {
+  background-color: #F0F2F5 !important;
+}
+
+/* Tertiary Surfaces (#10466D) */
+html.light .bg-\[\#10466D\],
+html.light [class*="bg-[#10466D]"] {
+  background-color: #E5E7EB !important;
+}
+
+/* Quaternary / Inner borders as backgrounds (#14527A) */
+html.light .bg-\[\#14527A\],
+html.light .bg-\[\#14527A\]\/50,
+html.light .bg-\[\#14527A\]\/40,
+html.light [class*="bg-[#14527A]"] {
+  background-color: #D5D8DC !important;
+}
+
+/* Deepest dark (#051829) */
+html.light .bg-\[\#051829\],
+html.light [class*="bg-[#051829]"] {
+  background-color: #F3F4F6 !important;
+  color: #1F2937 !important;
+}
+
+/* Hover States Overrides */
+html.light .hover\:bg-\[\#082F52\]:hover,
+html.light [class*="hover:bg-[#082F52]"]:hover {
+  background-color: #F9FAFB !important;
+}
+
+html.light .hover\:bg-\[\#0B3A61\]:hover,
+html.light .hover\:bg-\[\#0B3A61\]\/60:hover,
+html.light .hover\:bg-\[\#0B3A61\]\/50:hover,
+html.light .hover\:bg-\[\#0B3A61\]\/40:hover,
+html.light [class*="hover:bg-[#0B3A61]"]:hover {
+  background-color: #E5E7EB !important;
+}
+
+html.light .hover\:bg-\[\#10466D\]:hover,
+html.light [class*="hover:bg-[#10466D]"]:hover {
+  background-color: #D5D8DC !important;
+}
+
+html.light .hover\:bg-\[\#14527A\]:hover,
+html.light [class*="hover:bg-[#14527A]"]:hover {
+  background-color: #CBD5E1 !important;
+}
+
+/* Border Overrides */
+html.light .border-\[\#14527A\],
+html.light .border-\[\#14527A\]\/80,
+html.light .border-\[\#14527A\]\/60,
+html.light .border-\[\#14527A\]\/50,
+html.light .border-\[\#14527A\]\/40,
+html.light .border-\[\#14527A\]\/30,
+html.light .border-\[\#14527A\]\/25,
+html.light .border-\[\#14527A\]\/20,
+html.light [class*="border-[#14527A]"] {
+  border-color: #D5D8DC !important;
+}
+
+html.light .border-\[\#082F52\],
+html.light .border-\[\#0B3A61\] {
+  border-color: #E2E4E8 !important;
+}
+
+/* Typography Overrides */
+html.light .text-\[\#E8F4F8\],
+html.light [class*="text-[#E8F4F8]"] {
+  color: #1A1A1A !important;
+}
+
+html.light .text-\[\#8FAFBD\],
+html.light [class*="text-[#8FAFBD]"] {
+  color: #4B5563 !important;
+}
+
+html.light .text-\[\#64879A\],
+html.light [class*="text-[#64879A]"] {
+  color: #6B7280 !important;
+}
+
+html.light .hover\:text-\[\#E8F4F8\]:hover {
+  color: #000000 !important;
+}
+
+/* Standalone and inside-button dark text */
+html.light .text-\[\#031F38\] {
+  color: #1A1A1A !important;
+}
+
+html.light .bg-\[\#FFAA00\] .text-\[\#031F38\],
+html.light .bg-\[\#FFAA00\].text-\[\#031F38\],
+html.light .bg-\[\#00C98B\] .text-\[\#031F38\],
+html.light .bg-\[\#00C98B\].text-\[\#031F38\],
+html.light .bg-\[\#FF5C5C\] .text-\[\#031F38\],
+html.light .bg-\[\#FF5C5C\].text-\[\#031F38\],
+html.light .bg-\[\#CE3426\] .text-\[\#031F38\],
+html.light .bg-\[\#CE3426\].text-\[\#031F38\] {
+  color: #FFFFFF !important;
+}
+
+html.light .bg-\[\#FFAA00\] .bg-\[\#031F38\] {
+  background-color: rgba(255, 255, 255, 0.25) !important;
+  color: #FFFFFF !important;
+}
+
+html.light .bg-\[\#FFAA00\] .bg-\[\#031F38\] * {
+  color: #FFFFFF !important;
+}
+
+html.light .bg-\[\#38C6D9\]\/15 {
+  background-color: rgba(2, 132, 199, 0.12) !important;
+  border-color: rgba(2, 132, 199, 0.25) !important;
+}
+
+/* Signature Leandro Twin Red (#CE3426) Primary Accent */
+html.light .text-\[\#FFAA00\],
+html.light .text-\[\#FFB82E\] {
+  color: #CE3426 !important;
+}
+
+html.light .text-\[\#FFAA00\] svg,
+html.light .text-\[\#FFB82E\] svg {
+  color: #CE3426 !important;
+  stroke: #CE3426 !important;
+}
+
+html.light .bg-\[\#FFAA00\] {
+  background-color: #CE3426 !important;
+  color: #FFFFFF !important;
+}
+
+html.light .bg-\[\#FFAA00\] *,
+html.light .bg-\[\#FFAA00\] svg {
+  color: #FFFFFF !important;
+  stroke: #FFFFFF !important;
+}
+
+html.light .hover\:bg-\[\#FFB82E\]:hover,
+html.light .hover\:bg-\[\#FFAA00\]:hover {
+  background-color: #B82B1F !important;
+}
+
+html.light .border-\[\#FFAA00\] {
+  border-color: #CE3426 !important;
+}
+
+html.light .border-\[\#FFAA00\]\/50,
+html.light .border-\[\#FFAA00\]\/40,
+html.light .border-\[\#FFAA00\]\/35,
+html.light .border-\[\#FFAA00\]\/30,
+html.light .border-\[\#FFAA00\]\/25 {
+  border-color: rgba(206, 52, 38, 0.4) !important;
+}
+
+html.light .bg-\[\#FFAA00\]\/10 {
+  background-color: rgba(206, 52, 38, 0.08) !important;
+  color: #CE3426 !important;
+}
+
+html.light .bg-\[\#FFAA00\]\/15 {
+  background-color: rgba(206, 52, 38, 0.12) !important;
+  color: #CE3426 !important;
+}
+
+html.light .bg-\[\#FFAA00\]\/20 {
+  background-color: rgba(206, 52, 38, 0.16) !important;
+  color: #CE3426 !important;
+}
+
+html.light .bg-\[\#FFAA00\]\/25 {
+  background-color: rgba(206, 52, 38, 0.20) !important;
+  color: #CE3426 !important;
+}
+
+html.light .bg-\[\#FFAA00\]\/30 {
+  background-color: rgba(206, 52, 38, 0.25) !important;
+  color: #CE3426 !important;
+}
+
+/* Gradients in Light Mode: Solid, vibrant Twin Red linear gradients */
+html.light .bg-gradient-to-br.from-\[\#FFAA00\].to-\[\#FFB82E\],
+html.light .bg-gradient-to-r.from-\[\#FFAA00\].to-\[\#FFB82E\],
+html.light [class*="from-[#FFAA00]"] {
+  background-image: linear-gradient(135deg, #CE3426 0%, #D83D31 100%) !important;
+  background-color: #CE3426 !important;
+  color: #FFFFFF !important;
+}
+
+html.light .bg-gradient-to-br.from-\[\#FFAA00\].to-\[\#FFB82E\] svg,
+html.light .bg-gradient-to-r.from-\[\#FFAA00\].to-\[\#FFB82E\] svg,
+html.light [class*="from-[#FFAA00]"] svg {
+  color: #FFFFFF !important;
+  stroke: #FFFFFF !important;
+}
+
+/* Secondary Accents Contrast Fix in Light Mode (Icons & Highlights) */
+html.light .text-\[\#38C6D9\],
+html.light .text-\[\#38C6D9\] svg {
+  color: #0284C7 !important; /* Sky/Cyan 600 - High contrast on white */
+  stroke: #0284C7 !important;
+}
+
+html.light .text-\[\#00C98B\],
+html.light .text-\[\#00C98B\] svg {
+  color: #059669 !important; /* Emerald 600 - Rich forest green */
+  stroke: #059669 !important;
+}
+
+html.light .bg-\[\#00C98B\] {
+  background-color: #059669 !important;
+  color: #FFFFFF !important;
+}
+
+html.light .bg-\[\#00C98B\] *,
+html.light .bg-\[\#00C98B\] svg {
+  color: #FFFFFF !important;
+  stroke: #FFFFFF !important;
+}
+
+html.light .text-\[\#FFD166\],
+html.light .text-\[\#FFD166\] svg {
+  color: #D97706 !important; /* Amber 600 - Visible on light background */
+  stroke: #D97706 !important;
+}
+
+html.light .text-\[\#FF5C5C\],
+html.light .text-\[\#FF5C5C\] svg {
+  color: #DC2626 !important; /* Red 600 */
+  stroke: #DC2626 !important;
+}
+
+/* Indicador de carga mantida: Sempre Amarelo / Dourado em modo Claro e Escuro */
+.load-icon-maintained,
+.load-icon-maintained svg,
+svg.load-icon-maintained {
+  color: #FBBF24 !important;
+  stroke: #FBBF24 !important;
+}
+
+html.light .load-icon-maintained,
+html.light .load-icon-maintained svg,
+html.light svg.load-icon-maintained {
+  color: #D97706 !important;
+  stroke: #D97706 !important;
+}
+
+html.light .text-amber-300,
+html.light .text-amber-400 {
+  color: #B45309 !important; /* Amber 700 */
+}
+
+html.light .bg-amber-500\/20 {
+  background-color: #FEF3C7 !important;
+  border-color: #FCD34D !important;
+  color: #92400E !important;
+}
+
+html.light .bg-amber-500\/20 * {
+  color: #92400E !important;
+  stroke: #92400E !important;
+}
+
+html.light .shadow-\[\#FFAA00\]\/20,
+html.light .shadow-\[\#FFAA00\]\/15,
+html.light .shadow-\[\#FFAA00\]\/10 {
+  box-shadow: 0 4px 14px 0 rgba(206, 52, 38, 0.25) !important;
+}
+
+/* ==========================================================================
+   Foco Dinâmico: Série e Exercício Atual em Destaque, Demais Esmaecidas
+   ========================================================================== */
+
+/* Série Atual em Destaque Absoluto */
+.set-row-active {
+  opacity: 1 !important;
+  background-color: #1A1A1E !important;
+  border-color: #FFAA00 !important;
+  box-shadow: 0 4px 20px -2px rgba(255, 170, 0, 0.28), 0 0 0 3px rgba(255, 170, 0, 0.3) !important;
+}
+
+html.light .set-row-active {
+  background-color: #FFFFFF !important;
+  border-color: #CE3426 !important;
+  box-shadow: 0 6px 20px -2px rgba(206, 52, 38, 0.25), 0 0 0 3px rgba(206, 52, 38, 0.2) !important;
+}
+
+/* Demais Séries Pendentes (Esmaecidas para foco na série atual) */
+.set-row-dimmed {
+  opacity: 0.36 !important;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s ease, border-color 0.2s ease;
+}
+
+.set-row-dimmed:hover,
+.set-row-dimmed:focus-within {
+  opacity: 0.9 !important;
+}
+
+/* Séries Concluídas (Atenuadas sutilmente) */
+.set-row-completed {
+  opacity: 0.65 !important;
+  transition: opacity 0.2s ease;
+}
+
+.set-row-completed:hover,
+.set-row-completed:focus-within {
+  opacity: 0.95 !important;
+}
+
+/* Exercício Ativo em Destaque */
+.exercise-card-active {
+  opacity: 1 !important;
+  background-color: #16161A !important;
+  border-color: #FFAA00 !important;
+  box-shadow: 0 10px 28px -4px rgba(255, 170, 0, 0.18), 0 0 0 2px rgba(255, 170, 0, 0.35) !important;
+}
+
+html.light .exercise-card-active {
+  background-color: #FFFFFF !important;
+  border-color: #CE3426 !important;
+  box-shadow: 0 10px 28px -4px rgba(206, 52, 38, 0.2), 0 0 0 2px rgba(206, 52, 38, 0.25) !important;
+}
+
+/* Demais Exercícios Pendentes (Esmaecidos para foco no exercício em execução) */
+.exercise-card-dimmed {
+  opacity: 0.5 !important;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+
+.exercise-card-dimmed:hover,
+.exercise-card-dimmed:focus-within {
+  opacity: 0.92 !important;
+}
+
+html.light .ring-\[\#FFAA00\]\/40,
+html.light .ring-\[\#FFAA00\]\/30 {
+  --tw-ring-color: rgba(206, 52, 38, 0.4) !important;
+}
+
+html.light .focus-within\:border-\[\#FFAA00\]:focus-within,
+html.light .focus\:border-\[\#FFAA00\]:focus {
+  border-color: #CE3426 !important;
+}
+
+/* Inputs, Textareas, and Selects in Light Mode */
+html.light input:not([type="checkbox"]):not([type="radio"]):not(.bg-transparent),
+html.light select,
+html.light textarea {
+  background-color: #FFFFFF !important;
+  color: #1A1A1A !important;
+  border-color: #D5D8DC !important;
+}
+
+html.light input.bg-transparent {
+  background-color: transparent !important;
+  color: #1A1A1A !important;
+}
+
+html.light input:not([type="checkbox"]):not([type="radio"]):focus,
+html.light select:focus,
+html.light textarea:focus {
+  border-color: #CE3426 !important;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder,
+html.light .placeholder-\[\#64879A\]::placeholder {
+  color: #9CA3AF !important;
+}
+
+/* Modals Backdrop (keep dark overlay for contrast against light screen) */
+html.light #technique-modal-backdrop,
+html.light #exercise-video-modal-backdrop,
+html.light .fixed.inset-0.bg-black\/80 {
+  background-color: rgba(15, 23, 42, 0.75) !important;
+}
+
+/* Glow utilities in light mode */
+html.light .glow-primary {
+  box-shadow: 0 8px 20px -3px rgba(206, 52, 38, 0.35), 0 4px 10px -2px rgba(206, 52, 38, 0.15) !important;
+}
+
+html.light .glow-primary:hover {
+  box-shadow: 0 12px 24px -3px rgba(206, 52, 38, 0.45), 0 6px 12px -2px rgba(206, 52, 38, 0.2) !important;
+}
+
+/* ==========================================================================
+   APPLE DESIGN SYSTEM (Human Interface Guidelines) UTILITIES
+   - Glassmorphic Translucency & Vibrancy (Materials)
+   - Continuous Curvature / Squircle geometry
+   - Spring Transitions & Tactile Press feedback
+   - iOS Tab Bar & Inset Grouped card architecture
+   ========================================================================== */
+
+/* Apple Materials / Frosted Glass */
+.apple-glass {
+  background-color: rgba(20, 20, 22, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+html.light .apple-glass,
+html[data-theme="light"] .apple-glass,
+[data-theme="light"] .apple-glass {
+  background-color: rgba(255, 255, 255, 0.86) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Apple Header Glass */
+.apple-nav-glass {
+  background-color: rgba(10, 10, 10, 0.88);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border-bottom: 1px solid #24242A;
+}
+
+html.light .apple-nav-glass,
+html[data-theme="light"] .apple-nav-glass,
+[data-theme="light"] .apple-nav-glass {
+  background-color: rgba(255, 255, 255, 0.90) !important;
+  backdrop-filter: blur(24px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+  border-bottom: 1px solid #E2E4E8 !important;
+}
+
+/* Apple Inset Grouped Card */
+.apple-inset-card {
+  border-radius: 1.25rem;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.3), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+html.light .apple-inset-card,
+html[data-theme="light"] .apple-inset-card,
+[data-theme="light"] .apple-inset-card {
+  background-color: #FFFFFF !important;
+  border-color: #E2E4E8 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.02) !important;
+}
+
+/* Apple Tactile Press Feedback */
+.apple-press {
+  transition: transform 0.15s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.15s ease-out;
+}
+
+.apple-press:active {
+  transform: scale(0.96);
+  opacity: 0.88;
+}
+
+/* Apple Stepper Pill / Squircle */
+.apple-stepper-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  transition: all 0.15s cubic-bezier(0.32, 0.72, 0, 1);
+  user-select: none;
+}
+
+.apple-stepper-btn:active {
+  transform: scale(0.92);
+}
+
+/* Apple Segmented Control Container */
+.apple-segmented-container {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 0.875rem;
+  background-color: rgba(31, 31, 35, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+html.light .apple-segmented-container,
+[data-theme="light"] .apple-segmented-container {
+  background-color: rgba(226, 228, 232, 0.8) !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Safe Area Insets for iOS Home Indicator and Notch */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+}
+
+.pt-safe {
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0.75rem));
+}
+
+.pb-tab-bar-safe {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 1rem));
+}
+
+

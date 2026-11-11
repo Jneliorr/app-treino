@@ -1,0 +1,6 @@
+{
+  "name": "Acompanhamento de Treinos",
+  "description": "Aplicativo web mobile-first para acompanhamento de treinos de academia, registro de cargas, dicionário de técnicas avançadas e histórico de evolução.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
