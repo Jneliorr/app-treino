@@ -100,6 +100,7 @@ export interface ExerciseProgressionPoint {
   maxWeightKg: number;
   avgWeightKg: number;
   totalVolumeKg: number;
+  totalReps: number;
   setsCount: number;
   repsSummary: string;
   technique?: string;

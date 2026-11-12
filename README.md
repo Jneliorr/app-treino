@@ -13,7 +13,7 @@ npm run dev
 
 Abra `http://localhost:3000`. O aplicativo não exige chave de API nem configuração do Firebase. A tela de arquitetura do Firestore apresenta uma proposta de integração.
 
-Os dados ficam no armazenamento local do navegador e não são sincronizados entre dispositivos. Em **Fichas → Exportar**, você pode baixar as semanas e os treinos concluídos do perfil ativo em JSON. O aplicativo ainda não restaura dados desse arquivo.
+Os dados ficam no armazenamento local do navegador. Em **Fichas → Backup**, baixe ou restaure as semanas e os treinos concluídos do perfil ativo em JSON. A restauração mantém os registros existentes e ignora sessões já importadas.
 
 ## Verificações
 

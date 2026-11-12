@@ -23,7 +23,8 @@ import {
   Zap,
   RotateCcw,
 } from 'lucide-react';
-import { Routine, WorkoutWeek } from '../types';
+import { ActiveWorkoutDraft, Routine, WorkoutWeek } from '../types';
+import { RoutineEditor } from './RoutineEditor';
 import {
   loadWeeks,
   loadActiveWeekId,
@@ -92,6 +93,8 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
   // Modal para resetar rascunho de um treino específico
   const [routineToReset, setRoutineToReset] = useState<Routine | null>(null);
   const [weekError, setWeekError] = useState('');
+  const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
+  const [editorNotice, setEditorNotice] = useState('');
 
   const toggleAudioEnabled = () => {
     setIsAudioEnabled((prev) => {
@@ -197,8 +200,36 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
     }
   };
 
+  const drafts: { week: WorkoutWeek; routine: Routine; draft: ActiveWorkoutDraft }[] = weeks.flatMap((week) => week.routines.flatMap((routine) => {
+    const draft = loadRoutineDraft(routine.id, week.id);
+    return draft ? [{ week, routine, draft }] : [];
+  }));
+  const latest = [...drafts].sort((a, b) => Date.parse(b.draft.updatedAt) - Date.parse(a.draft.updatedAt))[0];
+  const latestExercise = latest?.routine.exercises.find((exercise) => exercise.id === latest.draft.selectedExerciseId);
+
+  if (editingRoutine && selectedWeek) {
+    return <RoutineEditor week={selectedWeek} routine={editingRoutine}
+      onCancel={() => setEditingRoutine(null)}
+      onSaved={(updated) => {
+        setWeeks(updated);
+        setEditingRoutine(null);
+        setEditorNotice('Ficha salva nesta semana.');
+      }} />;
+  }
+
   return (
     <div id="workout-weeks-hub" className="space-y-4 pb-16 text-[#E8F4F8]">
+      {editorNotice && <p role="status" className="text-sm text-[#E8F4F8]">{editorNotice}</p>}
+      {latest && (
+        <button type="button" onClick={() => onStartWorkout(latest.routine.id, latest.week.id)}
+          className="flex w-full items-center gap-3 rounded-2xl border border-[#FFAA00]/50 bg-[#082F52] p-3 text-left">
+          <Play className="h-5 w-5 shrink-0 text-[#FFAA00]" />
+          <span>
+            <strong className="block text-sm text-[#FFAA00]">Continuar treino</strong>
+            <span className="block text-xs">{latest.week.name} · {latest.routine.name}{latestExercise ? ` · ${latestExercise.name}` : ''}</span>
+          </span>
+        </button>
+      )}
       {/* Menu Superior Compacto e Clean de Seleção de Semanas (Apple Inset Header) */}
       <div className="relative z-30 flex items-center justify-between gap-2 p-2 apple-glass border border-[#14527A]/80 rounded-2xl shadow-sm">
         {/* Dropdown Menu para Alternar Semanas */}
@@ -433,7 +464,7 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
         </div>
 
         {selectedWeek?.routines.map((routine) => {
-          const draft = loadRoutineDraft(routine.id, selectedWeek.id);
+          const draft = drafts.find((entry) => entry.routine.id === routine.id && entry.week.id === selectedWeek.id)?.draft;
           const completedSetsCount = draft?.exerciseLogs
             ? Object.values(draft.exerciseLogs).reduce(
                 (acc, sets) => acc + (Array.isArray(sets) ? sets.filter((s) => s.completed).length : 0),
@@ -500,7 +531,17 @@ export const WorkoutWeeksHubView: React.FC<Props> = ({
                 </div>
 
                 {/* Lado Direito: Ações */}
-                <div className="flex items-center gap-1.5 sm:gap-2 self-end sm:self-center flex-shrink-0">
+                <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 self-end sm:self-center">
+                  <button type="button" onClick={() => {
+                    if (hasRealProgress) {
+                      setEditorNotice('Finalize ou reinicie o treino em andamento antes de editar esta ficha.');
+                      return;
+                    }
+                    setEditorNotice('');
+                    setEditingRoutine(routine);
+                  }} className="rounded-xl border border-[#14527A] px-3 py-2 text-xs font-semibold">
+                    Editar ficha
+                  </button>
                   {hasRealProgress && (
                     <button
                       type="button"

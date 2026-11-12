@@ -276,8 +276,13 @@ export const WorkoutActiveView: React.FC<Props> = ({
   const initialLogs = useRef(exerciseLogs);
   const keepDraft = useRef(Boolean(draft));
   const draftSuspended = useRef(false);
-  // Expanded state per exercise - ALL start minimized by default as requested
-  const [expandedExerciseIds, setExpandedExerciseIds] = useState<Record<string, boolean>>({});
+  const [expandedExerciseIds, setExpandedExerciseIds] = useState<Record<string, boolean>>(() =>
+    draft?.selectedExerciseId ? { [draft.selectedExerciseId]: true } : {});
+  useEffect(() => {
+    if (draft?.selectedExerciseId) {
+      document.getElementById(`exercise-card-${draft.selectedExerciseId}`)?.scrollIntoView({ block: 'start' });
+    }
+  }, [draft]);
   // Collapsed state for the "FINALIZADOS" section - starts collapsed by default
   const [isCompletedGroupOpen, setIsCompletedGroupOpen] = useState<boolean>(false);
 
@@ -917,7 +922,7 @@ export const WorkoutActiveView: React.FC<Props> = ({
       <div
         key={exercise.id}
         id={`exercise-card-${exercise.id}`}
-        className={`apple-inset-card transition-all duration-300 overflow-hidden ${
+        className={`apple-inset-card scroll-mt-40 transition-all duration-300 overflow-hidden ${
           isActive && !allCompleted
             ? 'exercise-card-active bg-[#0B3A61] border-2 border-[#FFAA00] shadow-xl shadow-[#FFAA00]/15 ring-2 ring-[#FFAA00]/30'
             : allCompleted
@@ -1210,9 +1215,24 @@ export const WorkoutActiveView: React.FC<Props> = ({
                         </span>
                       </div>
 
+                      <label className="flex h-9 w-16 items-center rounded-xl border border-[#14527A] bg-[#031F38] px-1.5 sm:h-10 sm:w-20">
+                        <span className="sr-only">Repetições da série {set.setNumber}</span>
+                        <input type="number" inputMode="numeric" min={1} max={9999}
+                          value={set.repsCompleted || ''}
+                          onChange={(event) => updateSet(exercise.id, setIdx, 'repsCompleted',
+                            Math.max(0, Math.min(9999, Math.trunc(Number(event.target.value) || 0))))}
+                          onBlur={(event) => {
+                            if (!event.currentTarget.value) {
+                              updateSet(exercise.id, setIdx, 'repsCompleted', Number(exercise.reps.match(/\d+/)?.[0]) || 8);
+                            }
+                          }}
+                          className="w-full min-w-0 bg-transparent text-center text-sm font-bold" />
+                        <span aria-hidden="true" className="text-[10px] text-[#8FAFBD]">rep</span>
+                      </label>
+
                       {/* Indicador de evolução de carga */}
                       {set.weightKg > 0 && pastWeight !== null ? (
-                        <div className="flex items-center justify-center shrink-0">
+                        <div className="hidden items-center justify-center shrink-0 sm:flex">
                           {set.weightKg > pastWeight ? (
                             <span title={`Aumento de carga (+${String(Math.round((set.weightKg - pastWeight) * 10) / 10).replace('.', ',')} kg)`}>
                               <TrendingUp className="w-4 h-4 text-[#00C98B] stroke-[3]" />
@@ -1229,16 +1249,17 @@ export const WorkoutActiveView: React.FC<Props> = ({
                         </div>
                       ) : null}
 
-                      {/* Quadro / Checkbox de Conclusão da Série */}
+                    </div>
+                  </div>
                       <button
                         id={`set-check-btn-${exercise.id}-${setIdx}`}
                         type="button"
                         onClick={() => toggleSetCompleted(exercise, setIdx)}
-                        className={`apple-press w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-90 ${
+                        className={`apple-press mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 ${
                           set.completed
                             ? 'bg-[#00C98B] text-[#031F38] hover:bg-[#00B07A] shadow-sm shadow-[#00C98B]/30'
                             : isCurrentActiveSet
-                            ? 'bg-[#031F38] hover:bg-[#0B3A61] border-2 border-[#FFAA00] text-[#FFAA00] shadow-sm shadow-[#FFAA00]/25 ring-1 ring-[#FFAA00]/30'
+                            ? 'bg-[#FFAA00] text-[#031F38]'
                             : 'bg-[#031F38] hover:bg-[#0B3A61] border-2 border-[#14527A] hover:border-[#FFAA00] text-[#64879A] hover:text-[#FFAA00]'
                         }`}
                         title={
@@ -1247,14 +1268,9 @@ export const WorkoutActiveView: React.FC<Props> = ({
                             : 'Toque para marcar série como concluída'
                         }
                       >
-                        <Check
-                          className={`w-4.5 h-4.5 sm:w-5 sm:h-5 stroke-[3.2] transition-transform ${
-                            set.completed ? 'scale-105 text-[#031F38]' : isCurrentActiveSet ? 'opacity-85 text-[#FFAA00]' : 'opacity-25 hover:opacity-75'
-                          }`}
-                        />
+                        <Check className="h-4 w-4" />
+                        {set.completed ? 'Desmarcar série' : 'Concluir série'}
                       </button>
-                    </div>
-                  </div>
                 </div>
               );
             })}
@@ -1594,6 +1610,45 @@ export const WorkoutActiveView: React.FC<Props> = ({
         )}
       </div>
 
+      {restTimer && (
+        <section aria-label="Descanso entre séries"
+          className="sticky top-14 z-20 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#14527A] bg-[#031F38] px-3 py-2 shadow-md">
+          <div className="flex items-center gap-2">
+            <Timer className="h-4 w-4 text-[#FFAA00]" />
+            <div>
+              <span className="block text-[10px] font-bold text-[#8FAFBD]">Descanso</span>
+              <span className="font-mono text-lg font-black text-[#FFAA00]">
+                {Math.floor(restTimerSeconds / 60).toString().padStart(2, '0')}
+                :{(restTimerSeconds % 60).toString().padStart(2, '0')}
+              </span>
+            </div>
+            <span role="status" className="text-xs text-[#8FAFBD]">
+              {isRestTimerActive ? 'Descansando' : restTimerSeconds > 0 ? 'Pausado' : 'Concluído'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {restTimerSeconds > 0 && (
+              <>
+                <button type="button" onClick={() => adjustRestTimer(-30)}
+                  className="rounded-lg border border-[#14527A] px-2 py-2 text-xs font-bold"
+                  title="Diminuir 30 segundos">−30s</button>
+                <button type="button" onClick={toggleRestTimer}
+                  className="rounded-lg bg-[#FFAA00] px-2 py-2 text-[#031F38]"
+                  title={isRestTimerActive ? 'Pausar descanso' : 'Retomar descanso'}>
+                  {isRestTimerActive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                </button>
+                <button type="button" onClick={() => adjustRestTimer(30)}
+                  className="rounded-lg border border-[#14527A] px-2 py-2 text-xs font-bold"
+                  title="Aumentar 30 segundos">+30s</button>
+              </>
+            )}
+            <button type="button" onClick={dismissRestTimer} title="Fechar descanso" className="rounded-lg p-2">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* Exercises Section with Pending (Minimized by Default) and Collapsed FINALIZADOS Group */}
       <div className="space-y-4">
         {/* 1. Exercícios a Realizar (Iniciam TODOS minimizados por padrão) */}
@@ -1710,99 +1765,6 @@ export const WorkoutActiveView: React.FC<Props> = ({
         )}
       </div>
 
-
-      {/* Floating Square Rest Timer HUD (Modelo Quadrado Compacto sem espaço ocioso) */}
-      {restTimer && (
-        <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 z-40 flex justify-center px-4 pointer-events-none animate-in slide-in-from-bottom-4 fade-in duration-200">
-          <div className="pointer-events-auto w-[136px] sm:w-[144px] bg-[#121214]/95 border border-neutral-700/80 rounded-2xl p-2.5 shadow-2xl shadow-black/90 backdrop-blur-xl flex flex-col gap-1.5">
-            {/* Top: Header com ícone, título e fechar */}
-            <div className="w-full flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <div
-                  className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-all ${
-                    isRestTimerActive
-                      ? 'bg-[#FFAA00]/20 text-[#FFAA00] border border-[#FFAA00]/40'
-                      : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
-                  }`}
-                >
-                  <Timer className={`w-2.5 h-2.5 ${isRestTimerActive ? 'animate-pulse text-[#FFAA00]' : ''}`} />
-                </div>
-                <span className="text-[10px] font-bold tracking-wider text-neutral-400 uppercase">
-                  Descanso
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={dismissRestTimer}
-                className="apple-press p-0.5 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
-                title="Fechar descanso"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Temporizador com dígitos compactos e rótulo logo abaixo sem espaço vazio */}
-            <div className="flex flex-col items-center justify-center py-0.5">
-              <div className="text-2xl font-black font-mono tracking-tight leading-none text-white">
-                <span className={isRestTimerActive ? 'text-[#FFAA00]' : 'text-neutral-300'}>
-                  {Math.floor(restTimerSeconds / 60)
-                    .toString()
-                    .padStart(2, '0')}
-                  :{(restTimerSeconds % 60).toString().padStart(2, '0')}
-                </span>
-              </div>
-
-              <div role="status" className="text-[9px] font-medium mt-0.5 leading-none">
-                {isRestTimerActive ? (
-                  <span className="text-neutral-400 flex items-center gap-1">
-                    <span className="w-1 h-1 rounded-full bg-[#FFAA00] animate-ping" />
-                    Descansando
-                  </span>
-                ) : (
-                  <span className="text-neutral-300">{restTimerSeconds > 0 ? 'Pausado' : 'Concluído'}</span>
-                )}
-              </div>
-            </div>
-
-            {/* Bottom: Aumentar, pausar e diminuir imediatamente abaixo do tempo */}
-            {restTimerSeconds > 0 && <div className="grid grid-cols-3 gap-1 w-full pt-1.5 border-t border-neutral-800/80">
-              <button
-                type="button"
-                onClick={() => adjustRestTimer(-30)}
-                className="apple-press py-1 rounded bg-neutral-800 hover:bg-neutral-700 active:bg-neutral-600 border border-neutral-700 text-[10px] font-bold text-neutral-200 hover:text-white transition-colors cursor-pointer flex items-center justify-center shadow-sm"
-                title="Diminuir 30 segundos"
-              >
-                -30s
-              </button>
-              <button
-                type="button"
-                onClick={toggleRestTimer}
-                className={`apple-press py-1 rounded font-bold text-xs transition-all flex items-center justify-center cursor-pointer shadow-md active:scale-95 ${
-                  isRestTimerActive
-                    ? 'bg-[#FFAA00] text-black hover:bg-[#FFB82E]'
-                    : 'bg-[#00C98B] text-black hover:bg-[#00B07A]'
-                }`}
-                title={isRestTimerActive ? 'Pausar descanso' : 'Retomar descanso'}
-              >
-                {isRestTimerActive ? (
-                  <Pause className="w-3.5 h-3.5 fill-current" />
-                ) : (
-                  <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => adjustRestTimer(30)}
-                className="apple-press py-1 rounded bg-neutral-800 hover:bg-neutral-700 active:bg-neutral-600 border border-neutral-700 text-[10px] font-bold text-neutral-200 hover:text-white transition-colors cursor-pointer flex items-center justify-center shadow-sm"
-                title="Aumentar 30 segundos"
-              >
-                +30s
-              </button>
-            </div>}
-          </div>
-        </div>
-      )}
 
       {/* Pending Sets Warning Dialog before Finish */}
       {isPendingSetsWarningOpen && (

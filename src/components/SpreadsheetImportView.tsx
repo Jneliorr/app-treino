@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Routine, RoutineExercise } from '../types';
+import { parseWorkoutBackup, type WorkoutBackup } from '../services/workoutBackup';
 import {
   parseWorkoutWorkbook,
   generateConsultoriaTwinExcelTemplate,
@@ -30,25 +31,32 @@ import {
   createNewWeek,
   updateWeekRoutines,
   loadActiveWeekId,
+  previewWorkoutRestore,
+  restoreWorkoutBackup,
+  getActiveProfileId,
+  loadAthleteProfiles,
 } from '../services/storage';
 
 interface Props {
   onRoutinesUpdated: (routines: Routine[]) => void;
   onWeekCreated?: (weekId: string) => void;
+  onBackupRestored: () => void;
 }
 
-export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWeekCreated }) => {
+export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWeekCreated, onBackupRestored }) => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [previewRoutines, setPreviewRoutines] = useState<Routine[] | null>(null);
   const [pasteText, setPasteText] = useState('');
   const [activeTab, setActiveTab] = useState<'new_week' | 'excel' | 'paste' | 'export'>('excel');
   const [guideModelTab, setGuideModelTab] = useState<'vertical' | 'grid'>('vertical');
+  const [backup, setBackup] = useState<WorkoutBackup | null>(null);
   const readRequest = useRef(0);
 
   const resetPreview = () => {
     readRequest.current += 1;
     setPreviewRoutines(null);
+    setBackup(null);
     setErrorMessage(null);
     setSuccessMessage(null);
   };
@@ -233,6 +241,40 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
     URL.revokeObjectURL(url);
   };
 
+  const handleBackupFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    resetPreview();
+    const request = readRequest.current;
+    try {
+      if (file.size > 10 * 1024 * 1024) throw new Error('O backup deve ter até 10 MB.');
+      const parsed = parseWorkoutBackup(await file.text());
+      if (request === readRequest.current) setBackup(parsed);
+    } catch (error) {
+      if (request === readRequest.current) {
+        setErrorMessage(error instanceof SyntaxError ? 'O arquivo não contém um JSON válido.' :
+          error instanceof Error ? error.message : 'Não foi possível ler o backup.');
+      }
+    }
+  };
+
+  const handleRestoreBackup = () => {
+    if (!backup) return;
+    try {
+      const { addedWeeks, addedLogs } = restoreWorkoutBackup(backup);
+      setBackup(null);
+      setErrorMessage(null);
+      setSuccessMessage(`Restauração concluída. Semanas adicionadas: ${addedWeeks}. Sessões adicionadas: ${addedLogs}.`);
+      onBackupRestored();
+    } catch {
+      setErrorMessage('Não foi possível gravar o backup neste navegador. Verifique o espaço disponível.');
+    }
+  };
+
+  const restorePreview = backup ? previewWorkoutRestore(backup) : null;
+  const athleteName = loadAthleteProfiles().find((profile) => profile.id === getActiveProfileId())?.name ?? 'Atleta';
+
   return (
     <div id="spreadsheet-import-container" className="space-y-4 pb-20 text-[#E8F4F8]">
       {/* Header Banner */}
@@ -318,7 +360,7 @@ export const SpreadsheetImportView: React.FC<Props> = ({ onRoutinesUpdated, onWe
             activeTab === 'export' ? 'bg-[#FFAA00] text-[#031F38]' : 'text-[#8FAFBD] hover:text-[#E8F4F8]'
           }`}
         >
-          Exportar
+          Backup
         </button>
       </div>
 
@@ -644,9 +686,9 @@ Remada Cross Peg Supinada	4x8"
       {activeTab === 'export' && (
         <div className="bg-[#082F52] border border-[#14527A] rounded-2xl p-5 space-y-4">
           <div>
-            <h3 className="text-sm font-bold text-[#E8F4F8]">Exportar fichas e histórico</h3>
+            <h3 className="text-sm font-bold text-[#E8F4F8]">Backup de fichas e histórico</h3>
             <p className="text-xs text-[#8FAFBD] mt-0.5">
-              Baixe todas as semanas e os treinos concluídos do perfil ativo em JSON. O aplicativo ainda não restaura dados desse arquivo.
+              Baixe ou restaure as semanas e os treinos concluídos do perfil ativo.
             </p>
           </div>
 
@@ -658,6 +700,22 @@ Remada Cross Peg Supinada	4x8"
             <Download className="w-4 h-4 text-[#FFAA00]" />
             <span>Baixar fichas e histórico (JSON)</span>
           </button>
+          <label className="block space-y-2 text-sm font-bold">
+            Restaurar backup em {athleteName}
+            <input type="file" accept=".json,application/json" onChange={handleBackupFile}
+              className="block w-full text-xs file:mr-2 file:rounded-lg file:border-0 file:bg-[#14527A] file:px-3 file:py-2 file:text-white" />
+          </label>
+          {backup && restorePreview && (
+            <div className="space-y-2 rounded-xl border border-[#14527A] bg-[#031F38] p-3 text-sm">
+              <p>Semanas no arquivo: <strong>{backup.weeks.length}</strong>. Sessões no arquivo: <strong>{backup.logs.length}</strong>.</p>
+              <p>Semanas novas: {restorePreview.addedWeeks}. Sessões novas: {restorePreview.addedLogs}. Os dados existentes serão mantidos.</p>
+              <button type="button" onClick={handleRestoreBackup}
+                disabled={!restorePreview.addedWeeks && !restorePreview.addedLogs}
+                className="rounded-xl bg-[#FFAA00] px-4 py-2 font-bold text-[#031F38] disabled:opacity-50">
+                Confirmar restauração
+              </button>
+            </div>
+          )}
         </div>
       )}
 

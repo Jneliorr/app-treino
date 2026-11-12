@@ -8,9 +8,11 @@ import {
   loadRoutineDraft,
   loadWeeks,
   loadWorkoutLogs,
+  restoreWorkoutBackup,
   saveRoutineDraft,
   updateWeekRoutines,
 } from '../src/services/storage';
+import { parseWorkoutBackup } from '../src/services/workoutBackup';
 import type { ActiveWorkoutDraft, WorkoutLog } from '../src/types';
 
 const stored = new Map<string, string>();
@@ -100,4 +102,36 @@ test('histórico ignora os exemplos e só marca como concluída a rotina da sema
   const legacy = { ...log, weekId: undefined };
   assert.deepEqual(findLastWorkoutForRoutine([legacy], weeks, original.id, routine.id), legacy);
   assert.equal(findLastWorkoutForRoutine([legacy], [...weeks, { ...original, id: 'duplicada' }], original.id, routine.id), undefined);
+});
+
+test('restaura uma semana com ID ocupado sem sobrescrever dados e aceita reimportar sem duplicar', () => {
+  const [local] = loadWeeks();
+  const [routine] = local.routines;
+  const imported = { ...local, name: 'Semana do outro aparelho' };
+  const log: WorkoutLog = {
+    id: 'treino-importado',
+    userId: 'default',
+    weekId: imported.id,
+    routineId: routine.id,
+    routineCode: routine.code,
+    routineName: routine.name,
+    targetMuscles: routine.targetMuscles,
+    startedAt: timestamp,
+    completedAt: timestamp,
+    durationMinutes: 25,
+    entries: [],
+    totalTonnageKg: 0,
+  };
+  const backup = parseWorkoutBackup(JSON.stringify({ version: 2, weeks: [imported], logs: [log] }));
+  const first = restoreWorkoutBackup(backup);
+  assert.equal(first.addedWeeks, 1);
+  assert.equal(first.addedLogs, 1);
+  const [unchanged, restored] = loadWeeks();
+  assert.equal(unchanged.name, local.name);
+  assert.equal(restored.name, imported.name);
+  assert.notEqual(restored.id, local.id);
+  assert.equal(loadWorkoutLogs()[0].weekId, restored.id);
+  const repeated = restoreWorkoutBackup(backup);
+  assert.equal(repeated.addedWeeks, 0);
+  assert.equal(repeated.addedLogs, 0);
 });

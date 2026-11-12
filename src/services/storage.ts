@@ -1,5 +1,6 @@
 import { Routine, WorkoutWeek, WorkoutLog, ExerciseProgressionPoint, ActiveWorkoutDraft, AthleteProfile } from '../types';
 import { INITIAL_ROUTINES_TWIN } from '../data/consultoriaTwinData';
+import { planWorkoutRestore, type WorkoutBackup } from './workoutBackup';
 
 const WEEKS_STORAGE_KEY = 'consultoria_twin_weeks_v1';
 const ACTIVE_WEEK_KEY = 'consultoria_twin_active_week_id';
@@ -525,6 +526,48 @@ export function resetToTwinRoutines(): Routine[] {
   return updateWeekRoutines(loadActiveWeekId(), INITIAL_ROUTINES_TWIN);
 }
 
+export function saveEditedRoutine(weekId: string, routine: Routine): WorkoutWeek[] {
+  const profileId = getActiveProfileId();
+  const weeks = loadWeeks(profileId);
+  const week = weeks.find((item) => item.id === weekId);
+  if (!week?.routines.some((item) => item.id === routine.id)) {
+    throw new Error('A ficha não foi encontrada nesta semana.');
+  }
+  if (loadRoutineDraft(routine.id, weekId, profileId)) {
+    throw new Error('Finalize ou reinicie o treino em andamento antes de editar esta ficha.');
+  }
+  const updated = weeks.map((item) => item.id === weekId
+    ? { ...item, routines: item.routines.map((entry) => entry.id === routine.id ? routine : entry) }
+    : item);
+  saveWeeks(updated, profileId);
+  return updated;
+}
+
+export function previewWorkoutRestore(backup: WorkoutBackup, profileId = getActiveProfileId()) {
+  return planWorkoutRestore(
+    { weeks: loadWeeks(profileId), logs: loadWorkoutLogs(profileId) },
+    { weeks: backup.weeks, logs: backup.logs.filter((log) => !SAMPLE_LOG_IDS.has(log.id)) },
+  );
+}
+
+export function restoreWorkoutBackup(backup: WorkoutBackup) {
+  const profileId = getActiveProfileId();
+  const plan = previewWorkoutRestore(backup, profileId);
+  const weeksKey = getProfileStorageKey(WEEKS_STORAGE_KEY, profileId);
+  const oldWeeks = localStorage.getItem(weeksKey);
+  if (plan.addedWeeks) saveWeeks(plan.weeks, profileId);
+  try {
+    if (plan.addedLogs) saveWorkoutLogs(plan.logs, profileId);
+  } catch (error) {
+    if (plan.addedWeeks) {
+      if (oldWeeks === null) localStorage.removeItem(weeksKey);
+      else localStorage.setItem(weeksKey, oldWeeks);
+    }
+    throw error;
+  }
+  return plan;
+}
+
 export function loadWorkoutLogs(profileId?: string): WorkoutLog[] {
   try {
     const pid = profileId || getActiveProfileId();
@@ -602,46 +645,35 @@ export function getLastSessionForExercise(exerciseName: string, profileId?: stri
   return null;
 }
 
-export function getExerciseProgression(exerciseName: string): ExerciseProgressionPoint[] {
-  const logs = loadWorkoutLogs();
+export function getExerciseProgression(exerciseName: string, logs = loadWorkoutLogs()): ExerciseProgressionPoint[] {
   const lowerName = exerciseName.toLowerCase().trim();
   const points: ExerciseProgressionPoint[] = [];
 
   // Sort logs chronologically (oldest first for chart progression)
   const sortedLogs = [...logs].sort(
-    (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+    (a, b) => Date.parse(a.completedAt) - Date.parse(b.completedAt)
   );
 
   for (const log of sortedLogs) {
-    for (const entry of log.entries) {
-      if (entry.exerciseName.toLowerCase().trim() === lowerName) {
-        const validSets = entry.sets.filter((s) => s.completed && s.weightKg > 0);
-        if (validSets.length > 0) {
-          const weights = validSets.map((s) => s.weightKg);
-          const maxWeightKg = Math.max(...weights);
-          const avgWeightKg = Math.round((weights.reduce((a, b) => a + b, 0) / weights.length) * 10) / 10;
-          const totalVolumeKg = Math.round(validSets.reduce((acc, s) => acc + s.weightKg * s.repsCompleted, 0) * 10) / 10;
-          const repsSummary = validSets.map((s) => `${String(s.weightKg).replace('.', ',')}kg×${s.repsCompleted}`).join(', ');
-
-          const d = new Date(log.startedAt);
-          const formattedDate = d.toLocaleDateString('pt-BR', {
-            day: '2-digit',
-            month: '2-digit',
-          });
-
-          points.push({
-            date: log.startedAt,
-            formattedDate,
-            maxWeightKg,
-            avgWeightKg,
-            totalVolumeKg,
-            setsCount: validSets.length,
-            repsSummary,
-            technique: entry.advancedTechniqueId,
-          });
-        }
-      }
-    }
+    const entries = log.entries.filter((entry) => entry.exerciseName.toLowerCase().trim() === lowerName);
+    const validSets = entries.flatMap((entry) => entry.sets.filter((set) => set.completed));
+    if (!validSets.length) continue;
+    const weights = validSets.map((set) => set.weightKg);
+    const maxWeightKg = weights.reduce((max, weight) => Math.max(max, weight), 0);
+    const avgWeightKg = Math.round(weights.reduce((a, b) => a + b, 0) / weights.length * 10) / 10;
+    const totalVolumeKg = Math.round(validSets.reduce((sum, set) => sum + set.weightKg * set.repsCompleted, 0) * 10) / 10;
+    const repsSummary = validSets.map((set) => `${String(set.weightKg).replace('.', ',')}kg×${set.repsCompleted}`).join(', ');
+    points.push({
+      date: log.completedAt,
+      formattedDate: new Date(log.completedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+      maxWeightKg,
+      avgWeightKg,
+      totalVolumeKg,
+      totalReps: validSets.reduce((sum, set) => sum + set.repsCompleted, 0),
+      setsCount: validSets.length,
+      repsSummary,
+      technique: entries[0].advancedTechniqueId,
+    });
   }
 
   return points;

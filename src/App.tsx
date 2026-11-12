@@ -202,7 +202,9 @@ export default function App() {
 
             <div
               id="app-header-logo-badge"
-              className="w-8 h-8 rounded-xl flex items-center justify-center font-black shadow-xs bg-[#CE3426] dark:bg-gradient-to-br dark:from-[#FFAA00] dark:to-[#FFB82E] text-white dark:text-[#031F38] shadow-[#FFAA00]/20 flex-shrink-0"
+              className={`w-8 h-8 rounded-xl items-center justify-center font-black shadow-xs bg-[#CE3426] dark:bg-gradient-to-br dark:from-[#FFAA00] dark:to-[#FFB82E] text-white dark:text-[#031F38] shadow-[#FFAA00]/20 flex-shrink-0 ${
+                isWorkoutActiveScreen && activeTab === 'workout' ? 'hidden min-[360px]:flex' : 'flex'
+              }`}
             >
               <Dumbbell className="w-4.5 h-4.5 stroke-[2.5]" />
             </div>
@@ -312,6 +314,7 @@ export default function App() {
           <Suspense fallback={<p role="status">Carregando fichas de treino…</p>}>
             <SpreadsheetImportView
               key={`sheets-${activeProfileId}`}
+              onBackupRestored={() => setScheduleRevision((revision) => revision + 1)}
               onRoutinesUpdated={(newRoutines) => {
                 setActiveWeekId(loadActiveWeekId());
                 setScheduleRevision((revision) => revision + 1);

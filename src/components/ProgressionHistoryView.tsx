@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { WorkoutLog } from '../types';
 import { loadWorkoutLogs, deleteWorkoutLog } from '../services/storage';
+import { ExerciseProgression } from './ExerciseProgression';
 
 interface Props {
   initialExerciseName?: string;
@@ -80,6 +81,7 @@ export const ProgressionHistoryView: React.FC<Props> = ({
 
   return (
     <div id="progression-history-container" className="space-y-4 pb-20 text-[#E8F4F8]">
+      <ExerciseProgression logs={workoutLogs} initialExerciseName={initialExerciseName} />
       {/* Top Header Card */}
       <div className="p-4 bg-[#082F52] border border-[#14527A] rounded-2xl shadow-md space-y-3">
         <div className="flex items-center justify-between">
